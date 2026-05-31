@@ -1,0 +1,161 @@
+# remote-dev-manager (rdm) configuration
+# ----------------------------------------
+# Config search order:
+#   1. $RDM_CONFIG environment variable
+#   2. ./rdm.yaml (current directory)
+#   3. ~/.config/rdm/config.yaml (Linux/Mac)
+#      ~/AppData/Roaming/rdm/config.yaml (Windows)
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# Global defaults — individual services can override these per-entry.
+# ---------------------------------------------------------------------------
+defaults:
+  # Proxy mode for SSH connections:
+  #   direct        - connect directly (no proxy)
+  #   clash         - route through local SOCKS5 proxy (Clash, etc.)
+  #   jump:<alias>  - use another host as an SSH jump host
+  proxy: direct
+
+  # Local SOCKS5 proxy port used when proxy mode is "clash".
+  # This is the port your local Clash/V2Ray/etc. listens on.
+  clash_port: 7897
+
+  # Automatically restart services that exit unexpectedly.
+  # Uses exponential backoff (1s, 2s, 4s, ... capped at 60s).
+  auto_restart: true
+
+  # Base directory for runtime files (.rdm/state.json, logs/).
+  # Empty string = same directory as the config file.
+  workspace: ""
+
+  # UI language: en | zh
+  locale: en
+
+# ---------------------------------------------------------------------------
+# SSH host definitions — referenced by name in tunnels/mounts/etc.
+# ---------------------------------------------------------------------------
+hosts:
+  gpu-server:
+    user: ubuntu
+    host: 192.168.1.100
+    port: 22
+    identity: ~/.ssh/gpu_key
+
+  cloud-vps:
+    user: root
+    host: example.com
+    port: 22022
+    identity: ~/.ssh/cloud.pem
+
+# ---------------------------------------------------------------------------
+# SSH tunnels — local (-L) and remote (-R) port forwarding.
+# ---------------------------------------------------------------------------
+tunnels:
+  # Forward local :8888 to gpu-server:8888 (e.g., Jupyter Notebook)
+  - name: gpu-jupyter
+    host: gpu-server
+    forwards:
+      - type: local            # local (-L) or remote (-R)
+        local_port: 8888
+        remote_port: 8888
+        # remote_host: 127.0.0.1   # default; change to forward to
+        #                            # a different host on the remote network
+
+  # Persistent keepalive tunnel through a local SOCKS proxy (Clash).
+  # Useful when the server is behind the GFW and needs a proxy to reach it.
+  - name: cloud-keepalive
+    host: cloud-vps
+    proxy: clash               # override default proxy for this tunnel
+
+# ---------------------------------------------------------------------------
+# SSHFS mounts — mount remote directories locally via SFTP.
+# Requires sshfs:
+#   Linux : apt install sshfs / yum install fuse-sshfs
+#   Windows: https://github.com/winfsp/sshfs-win (+ WinFsp)
+# ---------------------------------------------------------------------------
+mounts:
+  # Mount gpu-server's home directory; mount_point auto-assigned
+  # under <workspace>/mounts/<name>/ if left empty.
+  - name: gpu-home
+    host: gpu-server
+    remote_path: /home/ubuntu
+    # mount_point: ""          # auto: <workspace>/mounts/gpu-home
+    # options: []              # extra sshfs flags, e.g. ["-o reconnect"]
+
+  # Mount cloud-vps root at an explicit local path
+  - name: cloud-root
+    host: cloud-vps
+    remote_path: /
+    mount_point: ~/mounts/cloud
+
+# ---------------------------------------------------------------------------
+# Reverse proxy tunnels — expose a local port on the remote server.
+#
+# PRIMARY USE CASE: Claude Code / Codex behind the GFW
+# ----------------------------------------------------
+# If your remote server cannot reach api.anthropic.com directly, you can
+# run a local HTTP/SOCKS proxy (e.g., Clash on port 7897) and expose it
+# on the server via a reverse SSH tunnel:
+#
+#   [remote server] :7897 --> SSH --> [local machine] :7897 (Clash)
+#
+# Then on the server, set:
+#   export HTTPS_PROXY=socks5://127.0.0.1:7897
+#   export HTTP_PROXY=socks5://127.0.0.1:7897
+#
+# Now Claude Code / Codex CLI traffic flows through your local proxy.
+# ---------------------------------------------------------------------------
+reverse_proxies:
+  - name: cloud-clash
+    host: cloud-vps
+    local_port: 7897           # local Clash/proxy port to expose
+    remote_port: 7897          # port to bind on the remote server
+
+# ---------------------------------------------------------------------------
+# File sync — one-shot push/pull using rsync (or scp fallback).
+# This is NOT a continuous watcher; run `rdm sync <name>` manually
+# or bind it to a pre-commit hook / file-save trigger.
+# ---------------------------------------------------------------------------
+syncs:
+  - name: my-project
+    host: cloud-vps
+    local_path: ./src           # relative to config file directory
+    remote_path: /opt/project/src
+    mode: push                  # push (local->remote) | pull (remote->local)
+    exclude:
+      - .git
+      - node_modules
+      - target
+      - __pycache__
+
+# ---------------------------------------------------------------------------
+# Code mirrors — smart rsync with auto-exclusion of large files.
+#
+# Pull remote code repos to a local directory for fast reading by AI tools
+# (Claude Code, Codex, etc.) while keeping the remote as the execution
+# environment.  Large files (model weights, images, datasets, binaries)
+# are automatically excluded to save bandwidth and disk space.
+#
+# Workflow:
+#   rdm mirror browse gpu-server        # discover repos on remote
+#   rdm mirror add gpu-server ~/project # add to config
+#   rdm mirror pull my-project          # initial sync
+#   rdm mirror push my-project          # push edits back
+# ---------------------------------------------------------------------------
+mirrors:
+  - name: ml-training
+    host: gpu-server
+    remote_path: /home/ubuntu/ml-training
+    # local_path: ""              # auto: <workspace>/mirrors/ml-training
+    direction: pull               # pull | push | both
+    auto_exclude: true            # auto-filter weights, images, datasets, etc.
+    max_file_size: 10M            # skip individual files larger than this
+    exclude:                      # additional patterns to exclude
+      - "data/raw/"
+      - "logs/"
+      - ".wandb/"
+    include: []                   # force-include (overrides auto-exclude)
+    # include: ["*.py", "*.rs"]   # example: only sync source files
+    delete: false                 # do NOT delete local files missing from remote

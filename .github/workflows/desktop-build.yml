@@ -1,0 +1,211 @@
+name: desktop-build
+
+# Canonical release workflow for the rdm desktop app.
+#
+# Builds the Tauri v2 shell with the bundled PyInstaller Python sidecar on all
+# three desktop platforms and publishes a DRAFT GitHub release with the
+# installers/bundles attached. Triggered by `v*` tags or run manually.
+#
+# Pipeline per job (order matters):
+#   checkout -> Rust -> Python (+ PyInstaller) -> Node -> [Linux deps]
+#   -> build sidecar into binaries/ and rename to the Rust target triple
+#   -> tauri-action (bundles the triple-named sidecar via the release overlay).
+#
+# The PyInstaller sidecar MUST exist at the triple-named path BEFORE
+# tauri-action runs, because the release overlay (tauri.bundle.conf.json)
+# declares `externalBin: ["binaries/rdm-sidecar"]` and Tauri appends the triple.
+#
+# NOTE: Code signing / notarization is intentionally left to the maintainer.
+# Provide the relevant secrets (Apple cert + notarization, Windows cert, Tauri
+# updater key) and wire them into tauri-action / the bundle config to sign.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "Windows"
+            platform: windows-latest
+            args: ""
+          - name: "macOS Apple Silicon"
+            platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - name: "macOS Intel"
+            platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+          - name: "Linux"
+            platform: ubuntu-22.04
+            args: ""
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python package (api + dev extras → PyInstaller + rdm + deps)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[api,dev]"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # Build the Python sidecar with PyInstaller and rename it to the Rust
+      # target-triple form that Tauri's externalBin expects. We use `shell: bash`
+      # on all three OSes (bash is available on the Windows runners too).
+      #
+      # The target triple is derived from the matrix so the sidecar name matches
+      # exactly the artifact Tauri looks for when building `${{ matrix.args }}`:
+      #   - Windows: x86_64-pc-windows-msvc
+      #   - macOS:   read from `--target` in matrix.args (aarch64/x86_64-apple-darwin)
+      #   - Linux:   x86_64-unknown-linux-gnu
+      #
+      # NOTE (macOS Intel): the GitHub `macos-latest` runner is Apple Silicon.
+      # PyInstaller cannot freeze a true x86_64 Mach-O sidecar on an arm64 host
+      # without a full x86_64 Python toolchain (and cross-freezing is not
+      # supported). We therefore build the sidecar for the HOST arch (arm64) and
+      # name it `rdm-sidecar-x86_64-apple-darwin` so the Tauri Intel bundle has a
+      # sidecar present. This is a documented, accepted limitation: the produced
+      # "Intel" .dmg carries an arm64 sidecar. For a genuinely native Intel
+      # sidecar, build this matrix leg on an Intel macOS runner (e.g. macos-13).
+      # We do NOT silently mislabel — the limitation is recorded here and in the
+      # release summary step below.
+      - name: Build Python sidecar (PyInstaller) and rename to target triple
+        shell: bash
+        env:
+          MATRIX_PLATFORM: ${{ matrix.platform }}
+          MATRIX_ARGS: ${{ matrix.args }}
+        run: |
+          set -euo pipefail
+
+          BINARIES_DIR="desktop/src-tauri/binaries"
+          SPEC="desktop/sidecar/rdm-sidecar.spec"
+          mkdir -p "$BINARIES_DIR"
+
+          echo "==> Building sidecar with PyInstaller..."
+          pyinstaller "$SPEC" \
+            --distpath "$BINARIES_DIR" \
+            --workpath "build/pyinstaller" \
+            --noconfirm
+
+          # Resolve the target triple from the matrix (NOT from the host),
+          # so the sidecar name matches the Tauri --target being built.
+          case "$MATRIX_PLATFORM" in
+            windows-latest)
+              TRIPLE="x86_64-pc-windows-msvc"
+              EXT=".exe"
+              ;;
+            macos-latest)
+              # Extract the arch triple from `--target <triple>` in matrix.args.
+              if echo "$MATRIX_ARGS" | grep -q "aarch64-apple-darwin"; then
+                TRIPLE="aarch64-apple-darwin"
+              elif echo "$MATRIX_ARGS" | grep -q "x86_64-apple-darwin"; then
+                TRIPLE="x86_64-apple-darwin"
+                echo "==> NOTE: building host-arch (arm64) sidecar named for x86_64-apple-darwin (accepted limitation)."
+              else
+                echo "Could not determine macOS target triple from args: '$MATRIX_ARGS'" >&2
+                exit 1
+              fi
+              EXT=""
+              ;;
+            ubuntu-22.04)
+              TRIPLE="x86_64-unknown-linux-gnu"
+              EXT=""
+              ;;
+            *)
+              echo "Unsupported platform: $MATRIX_PLATFORM" >&2
+              exit 1
+              ;;
+          esac
+
+          SRC="$BINARIES_DIR/rdm-sidecar$EXT"
+          DST="$BINARIES_DIR/rdm-sidecar-$TRIPLE$EXT"
+
+          if [ ! -f "$SRC" ]; then
+            echo "Expected sidecar not found: $SRC" >&2
+            ls -la "$BINARIES_DIR" >&2 || true
+            exit 1
+          fi
+
+          cp -f "$SRC" "$DST"
+          if [ "$MATRIX_PLATFORM" != "windows-latest" ]; then
+            chmod +x "$DST"
+          fi
+
+          echo "RDM_SIDECAR_TRIPLE=$TRIPLE" >> "$GITHUB_ENV"
+          echo "==> Sidecar ready: $DST"
+          ls -la "$BINARIES_DIR"
+
+      - name: Build & release desktop app (tauri-action)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', github.run_number) }}
+          releaseName: "Remote Dev Manager ${{ github.ref_type == 'tag' && github.ref_name || format('build {0}', github.run_number) }}"
+          releaseDraft: true
+          # The externalBin (binaries/rdm-sidecar) lives ONLY in this release
+          # overlay so `tauri dev` / `cargo check` work without artifacts.
+          # matrix.args carries the per-leg `--target` (empty on Windows/Linux).
+          args: --config src-tauri/tauri.bundle.conf.json ${{ matrix.args }}
+
+      - name: Release summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### ${{ matrix.name }} build"
+            echo ""
+            echo "- Runner: \`${{ matrix.platform }}\`"
+            echo "- Tauri args: \`--config src-tauri/tauri.bundle.conf.json ${{ matrix.args }}\`"
+            echo "- Sidecar triple: \`${RDM_SIDECAR_TRIPLE:-unknown}\`"
+            if [ "${{ matrix.name }}" = "macOS Intel" ]; then
+              echo "- NOTE: Intel bundle carries a host-arch (arm64) sidecar — accepted limitation (see workflow comment)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

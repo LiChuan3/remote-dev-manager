@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "remote-dev-manager"
+dynamic = ["version"]
+description = "TUI + CLI tool for managing SSH tunnels, SSHFS mounts, reverse proxy tunnels, and file sync"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "remote-dev-manager contributors" },
+]
+keywords = ["ssh", "tunnel", "sshfs", "mount", "tui", "remote", "devtools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "textual>=0.80",
+    "psutil>=5.9",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+]
+dev = [
+    "pyinstaller",
+    "pytest",
+]
+
+[project.scripts]
+rdm = "rdm.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/remote-dev-manager/rdm"
+Repository = "https://github.com/remote-dev-manager/rdm"
+Issues = "https://github.com/remote-dev-manager/rdm/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "rdm.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["rdm*"]

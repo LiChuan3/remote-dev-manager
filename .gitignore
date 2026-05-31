@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# PyInstaller (build artifacts; keep the committed sidecar spec)
+*.spec~
+build/pyinstaller/
+!desktop/sidecar/rdm-sidecar.spec
+
+# rdm runtime state
+.rdm/
+*.log
+*.pid
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Desktop (Tauri + frontend)
+desktop/node_modules/
+desktop/dist/
+desktop/.migration-backup/
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/rdm-sidecar*
