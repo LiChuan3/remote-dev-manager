@@ -6,6 +6,7 @@ import type {
   RepoInfo,
   ServiceInfo,
   ServiceKind,
+  SshConfigHost,
   TestResult,
 } from './types'
 import { getSidecarPort } from './tauri'
@@ -91,6 +92,8 @@ export const api = {
 
   // --- Hosts ---
   listHosts: () => request<Host[]>('GET', '/api/hosts'),
+  listSshConfigHosts: () =>
+    request<SshConfigHost[]>('GET', '/api/hosts/ssh-config'),
   addHost: (b: Body) => request<Host>('POST', '/api/hosts', b),
   updateHost: (name: string, b: Body) =>
     request<Host>('PUT', `/api/hosts/${enc(name)}`, b),

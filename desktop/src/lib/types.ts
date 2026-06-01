@@ -8,6 +8,18 @@ export interface Host {
   identity: string
 }
 
+export interface SshConfigHost {
+  name: string
+  user: string
+  host: string
+  hostname: string
+  port: number
+  identity: string
+  proxy_jump: string
+  proxy_command: string
+  source: string
+}
+
 export type ServiceKind = 'tunnel' | 'mount' | 'reverse_proxy'
 
 export type ServiceStatus = 'STOPPED' | 'STARTING' | 'RUNNING' | 'FAILED'

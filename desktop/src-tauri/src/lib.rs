@@ -306,8 +306,8 @@ pub fn run() {
             }
 
             // Build the tray menu.
-            let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
             // Build the tray icon.
@@ -315,7 +315,7 @@ pub fn run() {
                 .icon(app.default_window_icon().cloned().ok_or_else(|| {
                     tauri::Error::AssetNotFound("default window icon".into())
                 })?)
-                .tooltip("Remote Dev Manager")
+                .tooltip("远程开发管理器")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event: MenuEvent| match event.id().as_ref() {

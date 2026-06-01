@@ -12,6 +12,10 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ModeToggle } from "@/components/mode-toggle"
 import { navItems } from "@/components/app-sidebar"
 
+const HEALTH_RETRY_COUNT = 20
+const healthRetryDelay = (attempt: number) =>
+  Math.min(500 + attempt * 500, 2000)
+
 function pageTitle(pathname: string): string {
   // Exact match first, then longest matching prefix (ignoring the index route).
   const exact = navItems.find((i) => i.to === pathname)
@@ -31,9 +35,20 @@ export function SiteHeader() {
     queryKey: ["health"],
     queryFn: () => api.health(),
     refetchInterval: 5000,
-    retry: false,
+    retry: HEALTH_RETRY_COUNT,
+    retryDelay: healthRetryDelay,
   })
-  const online = health.isSuccess
+  const backendStatus = health.isSuccess
+    ? "online"
+    : health.isError
+      ? "offline"
+      : "starting"
+  const backendLabel =
+    backendStatus === "online"
+      ? "后端在线"
+      : backendStatus === "starting"
+        ? "后端启动中"
+        : "后端离线"
 
   const onReload = async () => {
     setReloading(true)
@@ -60,23 +75,29 @@ export function SiteHeader() {
         <div
           className={cn(
             "hidden items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs font-medium sm:flex",
-            online ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+            backendStatus === "online"
+              ? "text-emerald-600 dark:text-emerald-400"
+              : backendStatus === "starting"
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-rose-600 dark:text-rose-400"
           )}
         >
           <span className="relative flex size-2">
-            {online && (
+            {backendStatus === "online" && (
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60" />
             )}
             <span
               className={cn(
                 "relative inline-flex size-2 rounded-full",
-                online ? "bg-emerald-500" : "bg-rose-500"
+                backendStatus === "online"
+                  ? "bg-emerald-500"
+                  : backendStatus === "starting"
+                    ? "animate-pulse bg-amber-500"
+                    : "bg-rose-500"
               )}
             />
           </span>
-          <span className="text-muted-foreground">
-            {online ? "后端在线" : "后端离线"}
-          </span>
+          <span className="text-muted-foreground">{backendLabel}</span>
         </div>
 
         <Button

@@ -35,7 +35,10 @@ import { Separator } from '@/components/ui/separator'
 import { PageHeader } from '@/components/page-header'
 import { CopyButton } from '@/components/copy-button'
 
-const REPO_URL = 'https://github.com/your-org/remote-dev-manager'
+const REPO_URL = 'https://github.com/LiChuan3/remote-dev-manager'
+const HEALTH_RETRY_COUNT = 20
+const healthRetryDelay = (attempt: number) =>
+  Math.min(500 + attempt * 500, 2000)
 
 /** Open a URL via the Tauri shell plugin if available, else a new browser tab. */
 async function openUrl(url: string): Promise<void> {
@@ -93,7 +96,8 @@ export default function SettingsPage() {
     queryKey: ['health'],
     queryFn: () => api.health(),
     refetchInterval: 5000,
-    retry: false,
+    retry: HEALTH_RETRY_COUNT,
+    retryDelay: healthRetryDelay,
   })
 
   const [reloading, setReloading] = useState(false)
@@ -173,7 +177,17 @@ export default function SettingsPage() {
     }
   }
 
-  const online = health.isSuccess
+  const backendStatus = health.isSuccess
+    ? 'online'
+    : health.isError
+      ? 'offline'
+      : 'starting'
+  const backendLabel =
+    backendStatus === 'online'
+      ? '在线'
+      : backendStatus === 'starting'
+        ? '启动中'
+        : '离线'
   const config = configQuery.data
   const defaults = config?.defaults
   const version = versionQuery.data?.version
@@ -330,12 +344,14 @@ export default function SettingsPage() {
               <Badge
                 variant="outline"
                 className={cn(
-                  online
+                  backendStatus === 'online'
                     ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                    : 'border-rose-500/30 text-rose-600 dark:text-rose-400',
+                    : backendStatus === 'starting'
+                      ? 'border-amber-500/30 text-amber-600 dark:text-amber-400'
+                      : 'border-rose-500/30 text-rose-600 dark:text-rose-400',
                 )}
               >
-                {online ? '在线' : '离线'}
+                {backendLabel}
               </Badge>
             }
           />

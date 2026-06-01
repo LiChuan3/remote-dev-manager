@@ -2,14 +2,38 @@
 
 from __future__ import annotations
 
+import fnmatch
+import glob
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
 from rdm import config_writer, mirror, remote
 from rdm.api.manager import ServiceManager
-from rdm.api.schemas import BrowseIn, HostIn, HostUpdate
+from rdm.api.schemas import BrowseIn, HostIn, HostUpdate, SshConfigHost
 
 router = APIRouter()
+
+_SSH_IMPORT_OPTIONS = {
+    "hostname",
+    "user",
+    "port",
+    "identityfile",
+    "proxyjump",
+    "proxycommand",
+}
+
+
+@dataclass
+class _SshHostBlock:
+    patterns: list[str]
+    options: dict[str, str] = field(default_factory=dict)
+    source: str = ""
+    line: int = 0
 
 
 def _manager(request: Request) -> ServiceManager:
@@ -40,10 +64,188 @@ def _host_references(mgr: ServiceManager, name: str) -> list[str]:
     return refs
 
 
+def _default_ssh_user() -> str:
+    return os.environ.get("USER") or os.environ.get("USERNAME") or ""
+
+
+def _strip_inline_comment(line: str) -> str:
+    in_single = False
+    in_double = False
+    escaped = False
+    for idx, ch in enumerate(line):
+        if ch == "\\" and not escaped:
+            escaped = True
+            continue
+        if ch == "'" and not in_double and not escaped:
+            in_single = not in_single
+        elif ch == '"' and not in_single and not escaped:
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double:
+            return line[:idx]
+        escaped = False
+    return line
+
+
+def _clean_ssh_value(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _split_ssh_words(value: str) -> list[str]:
+    return [_clean_ssh_value(part) for part in value.split() if part.strip()]
+
+
+def _read_ssh_directive(line: str) -> Optional[tuple[str, str]]:
+    line = _strip_inline_comment(line).strip().lstrip("\ufeff")
+    if not line:
+        return None
+    first = line.split(None, 1)[0]
+    if "=" in first:
+        key, value = line.split("=", 1)
+    else:
+        parts = line.split(None, 1)
+        if len(parts) == 1:
+            return (parts[0].lower(), "")
+        key, value = parts
+    return (key.strip().lower(), _clean_ssh_value(value))
+
+
+def _include_paths(patterns: str, base_dir: Path) -> list[Path]:
+    paths: list[Path] = []
+    for pattern in _split_ssh_words(patterns):
+        expanded = os.path.expandvars(os.path.expanduser(pattern))
+        candidate = Path(expanded)
+        if not candidate.is_absolute():
+            candidate = base_dir / candidate
+        matches = sorted(glob.glob(str(candidate)))
+        paths.extend(Path(match) for match in matches)
+    return paths
+
+
+def _read_ssh_blocks(path: Path, seen_files: set[Path]) -> list[_SshHostBlock]:
+    resolved = path.expanduser().resolve(strict=False)
+    if resolved in seen_files or not resolved.is_file():
+        return []
+    seen_files.add(resolved)
+
+    blocks: list[_SshHostBlock] = []
+    current: Optional[_SshHostBlock] = None
+    with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
+        for line_no, raw_line in enumerate(fh, start=1):
+            directive = _read_ssh_directive(raw_line)
+            if directive is None:
+                continue
+            key, value = directive
+
+            if key == "include":
+                for include_path in _include_paths(value, resolved.parent):
+                    blocks.extend(_read_ssh_blocks(include_path, seen_files))
+                continue
+
+            if key == "match":
+                current = None
+                continue
+
+            if key == "host":
+                current = _SshHostBlock(
+                    patterns=_split_ssh_words(value),
+                    source=str(resolved),
+                    line=line_no,
+                )
+                blocks.append(current)
+                continue
+
+            if current is not None and key in _SSH_IMPORT_OPTIONS:
+                current.options.setdefault(key, value)
+
+    return blocks
+
+
+def _is_concrete_ssh_host(pattern: str) -> bool:
+    return bool(pattern) and not pattern.startswith("!") and not any(
+        ch in pattern for ch in "*?"
+    )
+
+
+def _matches_ssh_patterns(patterns: list[str], alias: str) -> bool:
+    matched = False
+    for pattern in patterns:
+        if pattern.startswith("!"):
+            if fnmatch.fnmatchcase(alias, pattern[1:]):
+                return False
+            continue
+        if fnmatch.fnmatchcase(alias, pattern):
+            matched = True
+    return matched
+
+
+def _parse_ssh_port(value: str) -> int:
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return 22
+    return port if 0 < port < 65536 else 22
+
+
+def _ssh_config_hosts(path: Path) -> list[SshConfigHost]:
+    blocks = _read_ssh_blocks(path, set())
+    aliases: list[tuple[str, _SshHostBlock]] = []
+    seen_aliases: set[str] = set()
+
+    for block in blocks:
+        for pattern in block.patterns:
+            if not _is_concrete_ssh_host(pattern) or pattern in seen_aliases:
+                continue
+            seen_aliases.add(pattern)
+            aliases.append((pattern, block))
+
+    hosts: list[SshConfigHost] = []
+    for alias, source_block in aliases:
+        options: dict[str, str] = {}
+        for block in blocks:
+            if _matches_ssh_patterns(block.patterns, alias):
+                for key, value in block.options.items():
+                    options.setdefault(key, value)
+
+        hostname = options.get("hostname", alias)
+        user = options.get("user") or _default_ssh_user()
+        hosts.append(
+            SshConfigHost(
+                name=alias,
+                user=user,
+                # Store the SSH alias as the connection host so OpenSSH keeps
+                # applying ProxyJump, ProxyCommand and other local config.
+                host=alias,
+                hostname=hostname,
+                port=_parse_ssh_port(options.get("port", "22")),
+                identity=options.get("identityfile", ""),
+                proxy_jump=options.get("proxyjump", ""),
+                proxy_command=options.get("proxycommand", ""),
+                source=f"{source_block.source}:{source_block.line}",
+            )
+        )
+    return hosts
+
+
 @router.get("/api/hosts")
 async def list_hosts(request: Request) -> list[dict]:
     mgr = _manager(request)
     return [_host_dict(h) for h in mgr.config.hosts.values()]
+
+
+@router.get("/api/hosts/ssh-config")
+async def list_ssh_config_hosts(path: Optional[str] = None) -> list[SshConfigHost]:
+    config_path = (
+        Path(os.path.expandvars(os.path.expanduser(path)))
+        if path
+        else Path.home() / ".ssh" / "config"
+    )
+    try:
+        return _ssh_config_hosts(config_path)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/hosts")

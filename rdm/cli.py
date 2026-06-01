@@ -511,7 +511,7 @@ defaults:
   clash_port: 7897       # local SOCKS5 proxy port
   auto_restart: true
   workspace: ""          # base dir for mounts/logs (default: config dir)
-  locale: en             # en | zh
+  locale: zh-CN          # en | zh-CN
 
 hosts:
   my-server:

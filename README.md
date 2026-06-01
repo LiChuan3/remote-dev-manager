@@ -114,7 +114,7 @@ The same `rdm` core powers all three front-ends. The CLI/TUI call it in-process;
 
 ### 1. Desktop app (recommended)
 
-Download a prebuilt installer from the [Releases page](https://github.com/your-org/remote-dev-manager/releases) *(placeholder — no releases published yet)*.
+Download a prebuilt installer from the [Releases page](https://github.com/LiChuan3/remote-dev-manager/releases) *(no releases published yet)*.
 
 > You still need `ssh`, and `rsync` / `sshfs` on your `PATH` for the mount and mirror features (see [Configuration](docs/configuration.md) for platform notes).
 
@@ -133,7 +133,7 @@ To produce an installer locally, run `scripts/build-desktop.ps1` (Windows) or `s
 ### 3. CLI / TUI via pip
 
 ```bash
-git clone https://github.com/your-org/remote-dev-manager.git
+git clone https://github.com/LiChuan3/remote-dev-manager.git
 cd remote-dev-manager
 pip install -e ".[api]"     # the [api] extra adds FastAPI + uvicorn for the sidecar / `rdm web`
 ```

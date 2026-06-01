@@ -11,12 +11,13 @@ import {
   Package,
   Loader2,
   Search,
+  Download,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, ApiError } from "@/lib/api"
 import { fmtBytes } from "@/lib/format"
-import type { Host, RepoInfo, TestResult } from "@/lib/types"
+import type { Host, RepoInfo, SshConfigHost, TestResult } from "@/lib/types"
 
 import { PageHeader } from "@/components/page-header"
 import { EmptyState } from "@/components/empty-state"
@@ -237,6 +238,144 @@ function HostFormDialog({
           <Button type="submit" form="host-form" disabled={!valid || submitting}>
             {submitting ? <Loader2 className="animate-spin" /> : null}
             保存主机
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// SSH config import dialog
+// ---------------------------------------------------------------------------
+
+interface ImportSshConfigDialogProps {
+  open: boolean
+  hosts: Host[]
+  importingName: string | null
+  onClose: () => void
+  onImport: (host: SshConfigHost) => void
+}
+
+function ImportSshConfigDialog({
+  open,
+  hosts,
+  importingName,
+  onClose,
+  onImport,
+}: ImportSshConfigDialogProps) {
+  const sshConfigQuery = useQuery({
+    queryKey: ["hosts", "ssh-config"],
+    queryFn: () => api.listSshConfigHosts(),
+    enabled: open,
+    retry: false,
+  })
+
+  const existingNames = useMemo(
+    () => new Set(hosts.map((host) => host.name)),
+    [hosts],
+  )
+  const candidates = sshConfigQuery.data ?? []
+
+  const proxyLabel = (item: SshConfigHost) => {
+    if (item.proxy_jump) return `ProxyJump: ${item.proxy_jump}`
+    if (item.proxy_command) return "ProxyCommand"
+    return "默认 SSH 配置"
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>导入 SSH 配置</DialogTitle>
+          <DialogDescription>
+            读取本机 ~/.ssh/config，导入后通过 SSH 别名连接。
+          </DialogDescription>
+        </DialogHeader>
+
+        {sshConfigQuery.isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : sshConfigQuery.isError ? (
+          <div className="flex flex-col items-center gap-3 rounded-lg border px-6 py-10 text-center">
+            <p className="text-sm text-rose-600 dark:text-rose-400">
+              无法读取 SSH 配置。
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void sshConfigQuery.refetch()}
+            >
+              重试
+            </Button>
+          </div>
+        ) : candidates.length === 0 ? (
+          <div className="rounded-lg border px-6 py-10 text-center">
+            <p className="text-muted-foreground text-sm">
+              没有找到可导入的 SSH Host。
+            </p>
+          </div>
+        ) : (
+          <ScrollArea className="max-h-[52vh] rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>别名</TableHead>
+                  <TableHead>实际地址</TableHead>
+                  <TableHead>用户 / 端口</TableHead>
+                  <TableHead>密钥 / 跳板</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {candidates.map((item) => {
+                  const already = existingNames.has(item.name)
+                  const missingUser = item.user.trim() === ""
+                  const busy = importingName === item.name
+                  return (
+                    <TableRow key={`${item.source}-${item.name}`}>
+                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell className="text-muted-foreground font-mono text-xs">
+                        {item.hostname || item.host}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground font-mono text-xs">
+                        {item.user || "未设置"}:{item.port}
+                      </TableCell>
+                      <TableCell className="max-w-64">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-muted-foreground truncate font-mono text-xs">
+                            {item.identity || "agent / 默认"}
+                          </span>
+                          <span className="text-muted-foreground truncate text-xs">
+                            {proxyLabel(item)}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant={already ? "secondary" : "outline"}
+                          disabled={already || missingUser || importingName !== null}
+                          onClick={() => onImport(item)}
+                        >
+                          {busy ? <Loader2 className="animate-spin" /> : <Download />}
+                          {already ? "已导入" : missingUser ? "缺少用户" : "导入"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            关闭
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -544,6 +683,7 @@ export default function HostsPage() {
   })
 
   const [addOpen, setAddOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState<Host | null>(null)
   const [deleting, setDeleting] = useState<Host | null>(null)
   const [browsing, setBrowsing] = useState<Host | null>(null)
@@ -587,6 +727,23 @@ export default function HostsPage() {
     },
     onError: (e) =>
       toast.error("无法删除主机", { description: errMessage(e) }),
+  })
+
+  const importMut = useMutation({
+    mutationFn: (candidate: SshConfigHost) =>
+      api.addHost({
+        name: candidate.name,
+        user: candidate.user,
+        host: candidate.host,
+        port: candidate.port,
+        identity: candidate.identity || undefined,
+      }),
+    onSuccess: (host) => {
+      toast.success(`主机 "${host.name}" 已导入`)
+      invalidate()
+    },
+    onError: (e) =>
+      toast.error("无法导入主机", { description: errMessage(e) }),
   })
 
   const runTest = async (host: Host) => {
@@ -643,10 +800,16 @@ export default function HostsPage() {
           description="添加 SSH 远程主机，测试连通性，并浏览可同步的仓库。"
           icon={<Server />}
           actions={
-            <Button onClick={() => setAddOpen(true)}>
-              <Plus />
-              添加主机
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Download />
+                导入 SSH 配置
+              </Button>
+              <Button onClick={() => setAddOpen(true)}>
+                <Plus />
+                添加主机
+              </Button>
+            </>
           }
         />
 
@@ -677,10 +840,16 @@ export default function HostsPage() {
                 title="还没有主机"
                 description="添加远程主机后，即可创建端口转发、目录挂载和同步镜像。"
                 action={
-                  <Button onClick={() => setAddOpen(true)}>
-                    <Plus />
-                    添加主机
-                  </Button>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button variant="outline" onClick={() => setImportOpen(true)}>
+                      <Download />
+                      导入 SSH 配置
+                    </Button>
+                    <Button onClick={() => setAddOpen(true)}>
+                      <Plus />
+                      添加主机
+                    </Button>
+                  </div>
                 }
               />
             ) : (
@@ -721,6 +890,15 @@ export default function HostsPage() {
           submitting={addMut.isPending}
           onClose={() => setAddOpen(false)}
           onSubmit={(form) => addMut.mutate(form)}
+        />
+
+        {/* Import SSH config */}
+        <ImportSshConfigDialog
+          open={importOpen}
+          hosts={hosts}
+          importingName={importMut.isPending ? importMut.variables?.name ?? null : null}
+          onClose={() => setImportOpen(false)}
+          onImport={(host) => importMut.mutate(host)}
         />
 
         {/* Edit */}

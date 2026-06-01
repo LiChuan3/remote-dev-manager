@@ -32,6 +32,18 @@ class HostUpdate(_Base):
     identity: Optional[str] = None
 
 
+class SshConfigHost(_Base):
+    name: str
+    user: str = ""
+    host: str
+    hostname: str = ""
+    port: int = 22
+    identity: str = ""
+    proxy_jump: str = ""
+    proxy_command: str = ""
+    source: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Remote connection
 # ---------------------------------------------------------------------------

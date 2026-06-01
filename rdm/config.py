@@ -89,7 +89,7 @@ class DefaultsConfig:
     clash_port: int = 7897
     auto_restart: bool = True
     workspace: str = ""
-    locale: str = "en"
+    locale: str = "zh-CN"
 
 
 @dataclass
@@ -185,7 +185,7 @@ def _parse_defaults(raw: dict[str, Any] | None) -> DefaultsConfig:
         clash_port=int(raw.get("clash_port", 7897)),
         auto_restart=bool(raw.get("auto_restart", True)),
         workspace=str(raw.get("workspace", "")),
-        locale=str(raw.get("locale", "en")),
+        locale=str(raw.get("locale", "zh-CN")),
     )
 
 

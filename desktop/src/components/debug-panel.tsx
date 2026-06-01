@@ -39,6 +39,9 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 // Vite injects `import.meta.env.DEV`; type it loosely since the project has no
 // `vite/client` ambient types referenced.
 const isDev = (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV ?? false
+const HEALTH_RETRY_COUNT = 20
+const healthRetryDelay = (attempt: number) =>
+  Math.min(500 + attempt * 500, 2000)
 
 export function DebugPanel() {
   if (!isDev) return null
@@ -53,7 +56,8 @@ function DebugPanelInner() {
     queryKey: ["health"],
     queryFn: () => api.health(),
     refetchInterval: 5000,
-    retry: false,
+    retry: HEALTH_RETRY_COUNT,
+    retryDelay: healthRetryDelay,
   })
 
   useEffect(() => {
@@ -97,9 +101,9 @@ function DebugPanelInner() {
             value={
               health.isSuccess
                 ? "在线"
-                : health.isLoading
-                  ? "检查中"
-                  : "离线"
+                : health.isError
+                  ? "离线"
+                  : "启动中"
             }
           />
           <Row label="主题" value={theme ?? "跟随系统"} />
