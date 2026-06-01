@@ -8,14 +8,17 @@ import {
   RotateCw,
   Trash2,
   ScrollText,
-  Info,
   ArrowRight,
   Loader2,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { useStatusSocket, useLogSocket } from '@/lib/ws'
-import type { Host, ServiceInfo, ServiceStatus } from '@/lib/types'
+import type { Host, MountDiagnostics, ServiceInfo, ServiceStatus } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -88,6 +91,105 @@ type MountBody = {
   remote_path: string
   mount_point?: string
   options?: string[]
+}
+
+function MountDiagnosticsPanel({
+  diagnostics,
+  loading,
+  error,
+  installing,
+  onRetry,
+  onInstall,
+}: {
+  diagnostics: MountDiagnostics | undefined
+  loading: boolean
+  error: unknown
+  installing: boolean
+  onRetry: () => void
+  onInstall: () => void
+}) {
+  const ready = diagnostics?.ready === true
+  const missing = diagnostics?.missing ?? []
+  const canInstall = diagnostics?.platform === 'Windows' && !ready
+  const statusText = loading
+    ? '正在检查挂载依赖'
+    : ready
+      ? '目录挂载环境可用'
+      : '目录挂载环境不完整'
+  const detail = ready
+    ? diagnostics?.sshfs_version || diagnostics?.sshfs_path || '已找到 sshfs'
+    : missing.length > 0
+      ? `缺少：${missing.join('、')}`
+      : error instanceof Error
+        ? error.message
+        : '未找到可用的 sshfs 环境'
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 items-start gap-3">
+        {loading ? (
+          <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
+        ) : ready ? (
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        ) : (
+          <XCircle className="mt-0.5 size-4 shrink-0 text-rose-600 dark:text-rose-400" />
+        )}
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-medium">{statusText}</p>
+            {diagnostics?.platform ? (
+              <Badge variant="secondary">{diagnostics.platform}</Badge>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground break-all">{detail}</p>
+          {diagnostics ? (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              <Badge variant={diagnostics.sshfs_found ? 'default' : 'outline'}>
+                sshfs {diagnostics.sshfs_found ? '已安装' : '未找到'}
+              </Badge>
+              {diagnostics.platform === 'Windows' ? (
+                <>
+                  <Badge variant={diagnostics.sshfs_win_found ? 'default' : 'outline'}>
+                    SSHFS-Win {diagnostics.sshfs_win_found ? '已安装' : '未找到'}
+                  </Badge>
+                  <Badge variant={diagnostics.winfsp_found ? 'default' : 'outline'}>
+                    WinFsp {diagnostics.winfsp_found ? '已安装' : '未找到'}
+                  </Badge>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          {diagnostics?.sshfs_path ? (
+            <p className="text-xs text-muted-foreground break-all">
+              sshfs：{diagnostics.sshfs_path}
+            </p>
+          ) : null}
+          {!ready ? (
+            <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              Windows 需要同时安装 WinFsp 和 SSHFS-Win，安装后重新打开应用即可。
+            </p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            SSHFS/SSHFS-Win 挂载更适合读取、浏览和临时编辑；写入受网络、缓存和 FUSE/WinFsp
+            影响，不建议作为可靠同步方式。需要稳定读写时，建议先拉取或镜像到本地修改，再同步回服务器。
+          </p>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2">
+        {canInstall ? (
+          <Button size="sm" onClick={onInstall} disabled={installing}>
+            {installing ? <Loader2 className="animate-spin" /> : <Download />}
+            一键安装
+          </Button>
+        ) : null}
+        <Button variant="outline" size="sm" onClick={onRetry} disabled={loading}>
+          {loading ? <Loader2 className="animate-spin" /> : null}
+          重新检查
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 // -------------------------------------------------------------------------
@@ -465,10 +567,17 @@ export default function MountsPage() {
     queryFn: () => api.getConfig(),
     staleTime: 10000,
   })
+  const diagnosticsQuery = useQuery({
+    queryKey: ['mount-diagnostics'],
+    queryFn: () => api.mountDiagnostics(),
+    refetchInterval: 30000,
+    retry: false,
+  })
 
   const [addOpen, setAddOpen] = useState(false)
   const [logName, setLogName] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [installOpen, setInstallOpen] = useState(false)
 
   const hosts = configQuery.data?.hosts ?? []
   const workspace = configQuery.data?.workspace ?? ''
@@ -519,6 +628,24 @@ export default function MountsPage() {
       }),
   })
 
+  const installMut = useMutation({
+    mutationFn: () => api.installMountDependencies(),
+    onSuccess: (res) => {
+      setInstallOpen(false)
+      if (res.ok) {
+        toast.success('安装窗口已打开', {
+          description: res.message || '请在管理员 PowerShell 中完成安装。',
+        })
+      } else {
+        toast.error('无法启动安装器', { description: res.message })
+      }
+    },
+    onError: (e) =>
+      toast.error('无法启动安装器', {
+        description: e instanceof Error ? e.message : undefined,
+      }),
+  })
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -533,13 +660,14 @@ export default function MountsPage() {
         }
       />
 
-      <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground">
-        <Info className="mt-0.5 size-3.5 shrink-0 text-primary" />
-        <span>
-          目录挂载需要 Linux 上的 <span className="font-mono text-foreground">sshfs</span>，
-          或 Windows 上的 <span className="font-mono text-foreground">SSHFS-Win</span>。
-        </span>
-      </div>
+      <MountDiagnosticsPanel
+        diagnostics={diagnosticsQuery.data}
+        loading={diagnosticsQuery.isLoading || diagnosticsQuery.isFetching}
+        error={diagnosticsQuery.error}
+        installing={installMut.isPending}
+        onRetry={() => void diagnosticsQuery.refetch()}
+        onInstall={() => setInstallOpen(true)}
+      />
 
       <Card className="py-0">
         <CardContent className="px-0">
@@ -597,6 +725,31 @@ export default function MountsPage() {
       />
 
       <LogSheet mount={logName} onClose={() => setLogName(null)} />
+
+      <AlertDialog open={installOpen} onOpenChange={setInstallOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>安装目录挂载依赖</AlertDialogTitle>
+            <AlertDialogDescription>
+              将打开管理员 PowerShell，并通过 winget 安装 WinFsp 和 SSHFS-Win。
+              安装过程中可能出现 UAC 权限确认窗口。安装完成后请回到应用点击“重新检查”。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={installMut.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                installMut.mutate()
+              }}
+              disabled={installMut.isPending}
+            >
+              {installMut.isPending ? <Loader2 className="animate-spin" /> : null}
+              打开安装器
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
         <AlertDialogContent>

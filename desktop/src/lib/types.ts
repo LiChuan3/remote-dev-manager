@@ -48,6 +48,26 @@ export interface Mirror {
   delete: boolean
 }
 
+export interface MountDiagnostics {
+  platform: string
+  ready: boolean
+  sshfs_found: boolean
+  sshfs_path: string
+  sshfs_version: string
+  sshfs_win_found: boolean
+  sshfs_win_path: string
+  winfsp_found: boolean
+  winfsp_path: string
+  missing: string[]
+}
+
+export interface MountInstallResult {
+  ok: boolean
+  started: boolean
+  message: string
+  script_path: string
+}
+
 export interface ConfigDefaults {
   proxy: string
   clash_port: number

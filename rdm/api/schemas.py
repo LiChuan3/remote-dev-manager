@@ -98,6 +98,26 @@ class MountIn(_Base):
     options: list[str] = Field(default_factory=list)
 
 
+class MountDiagnostics(_Base):
+    platform: str
+    ready: bool = False
+    sshfs_found: bool = False
+    sshfs_path: str = ""
+    sshfs_version: str = ""
+    sshfs_win_found: bool = False
+    sshfs_win_path: str = ""
+    winfsp_found: bool = False
+    winfsp_path: str = ""
+    missing: list[str] = Field(default_factory=list)
+
+
+class MountInstallResult(_Base):
+    ok: bool = False
+    started: bool = False
+    message: str = ""
+    script_path: str = ""
+
+
 class ReverseProxyIn(_Base):
     name: str
     host: str

@@ -8,11 +8,14 @@ from fastapi.concurrency import run_in_threadpool
 from rdm import config_writer
 from rdm.api.manager import ServiceManager
 from rdm.api.schemas import (
+    MountDiagnostics,
+    MountInstallResult,
     MountIn,
     ProxyPatch,
     ReverseProxyIn,
     TunnelIn,
 )
+from rdm.mount import check_sshfs_installation, launch_sshfs_dependency_installer
 
 router = APIRouter()
 
@@ -32,6 +35,18 @@ async def _stop_before_delete(mgr: ServiceManager, kind: str, name: str) -> None
 @router.get("/api/services")
 async def list_services(request: Request) -> list[dict]:
     return _manager(request).snapshot()
+
+
+@router.get("/api/mounts/diagnostics")
+async def mount_diagnostics() -> MountDiagnostics:
+    return MountDiagnostics(**await run_in_threadpool(check_sshfs_installation))
+
+
+@router.post("/api/mounts/install-dependencies")
+async def install_mount_dependencies() -> MountInstallResult:
+    return MountInstallResult(
+        **await run_in_threadpool(launch_sshfs_dependency_installer)
+    )
 
 
 @router.post("/api/services/{kind}/{name}/start")

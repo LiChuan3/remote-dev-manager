@@ -3,6 +3,8 @@ import type {
   ConfigData,
   Host,
   Mirror,
+  MountDiagnostics,
+  MountInstallResult,
   RepoInfo,
   ServiceInfo,
   ServiceKind,
@@ -137,6 +139,10 @@ export const api = {
     request<{ ok: boolean }>('DELETE', `/api/tunnels/${enc(name)}`),
 
   // --- Mounts ---
+  mountDiagnostics: () =>
+    request<MountDiagnostics>('GET', '/api/mounts/diagnostics'),
+  installMountDependencies: () =>
+    request<MountInstallResult>('POST', '/api/mounts/install-dependencies'),
   addMount: (b: Body) => request<unknown>('POST', '/api/mounts', b),
   removeMount: (name: string) =>
     request<{ ok: boolean }>('DELETE', `/api/mounts/${enc(name)}`),

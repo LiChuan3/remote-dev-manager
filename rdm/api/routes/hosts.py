@@ -68,6 +68,32 @@ def _default_ssh_user() -> str:
     return os.environ.get("USER") or os.environ.get("USERNAME") or ""
 
 
+def _default_ssh_config_path() -> Path:
+    """Return the most likely per-user OpenSSH config path on this machine."""
+    candidates: list[Path] = []
+    userprofile = os.environ.get("USERPROFILE")
+    if userprofile:
+        candidates.append(Path(userprofile) / ".ssh" / "config")
+    home = os.environ.get("HOME")
+    if home:
+        candidates.append(Path(home) / ".ssh" / "config")
+    home_drive = os.environ.get("HOMEDRIVE")
+    home_path = os.environ.get("HOMEPATH")
+    if home_drive and home_path:
+        candidates.append(Path(home_drive + home_path) / ".ssh" / "config")
+    candidates.append(Path.home() / ".ssh" / "config")
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve(strict=False)
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.is_file():
+            return resolved
+    return candidates[0].expanduser().resolve(strict=False)
+
+
 def _strip_inline_comment(line: str) -> str:
     in_single = False
     in_double = False
@@ -240,7 +266,7 @@ async def list_ssh_config_hosts(path: Optional[str] = None) -> list[SshConfigHos
     config_path = (
         Path(os.path.expandvars(os.path.expanduser(path)))
         if path
-        else Path.home() / ".ssh" / "config"
+        else _default_ssh_config_path()
     )
     try:
         return _ssh_config_hosts(config_path)

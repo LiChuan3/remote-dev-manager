@@ -276,6 +276,7 @@ function ImportSshConfigDialog({
     [hosts],
   )
   const candidates = sshConfigQuery.data ?? []
+  const sshConfigError = errMessage(sshConfigQuery.error)
 
   const proxyLabel = (item: SshConfigHost) => {
     if (item.proxy_jump) return `ProxyJump: ${item.proxy_jump}`
@@ -304,6 +305,11 @@ function ImportSshConfigDialog({
             <p className="text-sm text-rose-600 dark:text-rose-400">
               无法读取 SSH 配置。
             </p>
+            {sshConfigError ? (
+              <p className="max-w-xl text-xs text-muted-foreground break-all">
+                {sshConfigError}
+              </p>
+            ) : null}
             <Button
               variant="outline"
               size="sm"

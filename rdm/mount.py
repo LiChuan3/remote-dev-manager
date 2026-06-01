@@ -7,9 +7,10 @@ import platform
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import psutil
 
@@ -29,6 +30,161 @@ _IS_WINDOWS = platform.system() == "Windows"
 
 # Well-known install location for WinFsp/SSHFS-Win
 _SSHFS_WIN_DIR = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "SSHFS-Win" / "bin"
+_WINFSP_ROOTS = [
+    Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "WinFsp",
+    Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "WinFsp",
+]
+
+
+def _run_version(binary: str) -> str:
+    """Return a short sshfs version string when the binary can report one."""
+    for flag in ("--version", "-V"):
+        try:
+            proc = subprocess.run(
+                [binary, flag],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        text = (proc.stdout or proc.stderr).strip()
+        if text:
+            return text.splitlines()[0].strip()
+    return ""
+
+
+def check_sshfs_installation() -> dict[str, Any]:
+    """Inspect whether this machine has the pieces needed for SSHFS mounts."""
+    path_sshfs = shutil.which("sshfs")
+    bundled_sshfs = _SSHFS_WIN_DIR / "sshfs.exe"
+    sshfs_path = str(bundled_sshfs) if bundled_sshfs.is_file() else (path_sshfs or "")
+    sshfs_win_found = bundled_sshfs.is_file() or (
+        bool(path_sshfs) and "sshfs-win" in path_sshfs.lower()
+    )
+    winfsp_candidates: list[Path] = []
+    for root in _WINFSP_ROOTS:
+        winfsp_candidates.extend(
+            [
+                root / "bin" / "winfsp-x64.dll",
+                root / "bin" / "winfsp-x86.dll",
+                root / "bin" / "launchctl-x64.exe",
+                root / "bin" / "fsptool.exe",
+            ]
+        )
+        sxs_dir = root / "SxS"
+        if sxs_dir.is_dir():
+            for child in sxs_dir.iterdir():
+                winfsp_candidates.extend(
+                    [
+                        child / "bin" / "winfsp-x64.dll",
+                        child / "bin" / "winfsp-x86.dll",
+                        child / "bin" / "launchctl-x64.exe",
+                        child / "bin" / "fsptool-x64.exe",
+                    ]
+                )
+    winfsp_found = any(p.is_file() for p in winfsp_candidates)
+    winfsp_path = next(
+        (str(p.parent) for p in winfsp_candidates if p.is_file()),
+        "",
+    )
+
+    found = bool(sshfs_path) and (not _IS_WINDOWS or winfsp_found)
+    missing: list[str] = []
+    if not sshfs_path:
+        missing.append("sshfs")
+    if _IS_WINDOWS and not sshfs_win_found and not path_sshfs:
+        missing.append("SSHFS-Win")
+    if _IS_WINDOWS and not winfsp_found:
+        missing.append("WinFsp")
+
+    return {
+        "platform": platform.system(),
+        "ready": found,
+        "sshfs_found": bool(sshfs_path),
+        "sshfs_path": sshfs_path,
+        "sshfs_version": _run_version(sshfs_path) if sshfs_path else "",
+        "sshfs_win_found": sshfs_win_found,
+        "sshfs_win_path": str(bundled_sshfs) if bundled_sshfs.is_file() else (path_sshfs or ""),
+        "winfsp_found": winfsp_found,
+        "winfsp_path": winfsp_path,
+        "missing": missing,
+    }
+
+
+def launch_sshfs_dependency_installer() -> dict[str, Any]:
+    """Launch an elevated Windows installer flow for WinFsp + SSHFS-Win."""
+    if not _IS_WINDOWS:
+        return {
+            "ok": False,
+            "started": False,
+            "message": "一键安装目前只支持 Windows。请使用系统包管理器安装 sshfs。",
+            "script_path": "",
+        }
+    if not shutil.which("winget"):
+        return {
+            "ok": False,
+            "started": False,
+            "message": "未找到 winget。请先安装或更新 Windows App Installer。",
+            "script_path": "",
+        }
+
+    script_path = Path(tempfile.gettempdir()) / "rdm-install-sshfs-win.ps1"
+    script = r'''
+$ErrorActionPreference = "Stop"
+$Host.UI.RawUI.WindowTitle = "远程开发管理器 - 安装目录挂载依赖"
+Write-Host "远程开发管理器将安装目录挂载依赖：" -ForegroundColor Cyan
+Write-Host "  1. WinFsp.WinFsp"
+Write-Host "  2. SSHFS-Win.SSHFS-Win"
+Write-Host ""
+Write-Host "安装过程由 winget 执行，可能需要几分钟。" -ForegroundColor Yellow
+Write-Host ""
+
+winget install --id WinFsp.WinFsp --exact --source winget --accept-source-agreements --accept-package-agreements
+winget install --id SSHFS-Win.SSHFS-Win --exact --source winget --accept-source-agreements --accept-package-agreements
+
+Write-Host ""
+Write-Host "安装命令已执行完成。请重新打开远程开发管理器，或回到应用点击“重新检查”。" -ForegroundColor Green
+Read-Host "按 Enter 关闭窗口"
+'''
+    script_path.write_text(script.strip() + "\n", encoding="utf-8")
+
+    escaped_script = str(script_path).replace('"', '`"')
+    command = (
+        'Start-Process -FilePath "powershell.exe" '
+        f'-ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"{escaped_script}`"" '
+        "-Verb RunAs"
+    )
+    try:
+        proc = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {
+            "ok": False,
+            "started": False,
+            "message": str(exc),
+            "script_path": str(script_path),
+        }
+
+    if proc.returncode != 0:
+        message = (proc.stderr or proc.stdout).strip() or f"安装器启动失败：{proc.returncode}"
+        return {
+            "ok": False,
+            "started": False,
+            "message": message,
+            "script_path": str(script_path),
+        }
+
+    return {
+        "ok": True,
+        "started": True,
+        "message": "已打开管理员安装窗口，请按提示完成 WinFsp 和 SSHFS-Win 安装。",
+        "script_path": str(script_path),
+    }
 
 
 def _find_sshfs_binary() -> str:
