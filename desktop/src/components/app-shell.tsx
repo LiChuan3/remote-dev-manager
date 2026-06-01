@@ -3,8 +3,11 @@ import { Outlet } from "react-router-dom"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
+import { useWheelScroll } from "@/hooks/use-wheel-scroll"
 
 export function AppShell() {
+  useWheelScroll()
+
   return (
     <SidebarProvider
       style={
