@@ -75,6 +75,7 @@ import {
 } from '@/components/ui/tooltip'
 import { PageHeader } from '@/components/page-header'
 import { EmptyState } from '@/components/empty-state'
+import { OperationGuide } from '@/components/operation-guide'
 
 /** Loosely-typed result returned by pull/push/status rsync operations. */
 interface MirrorOpResult {
@@ -379,7 +380,10 @@ function AddMirrorDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-xl" showCloseButton={!submitting}>
+      <DialogContent
+        className="max-h-[calc(100vh-2rem)] overflow-hidden sm:max-w-xl"
+        showCloseButton={!submitting}
+      >
         <DialogHeader>
           <DialogTitle>添加同步镜像</DialogTitle>
           <DialogDescription>
@@ -387,7 +391,18 @@ function AddMirrorDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="-mx-1 max-h-[60vh] px-1">
+        <OperationGuide
+          compact
+          title="同步镜像怎么填"
+          steps={[
+            "选择主机和远程路径；本地路径留空时会自动放到工作区 mirrors 目录。",
+            "最大文件大小用于跳过大文件，适合避免模型权重、数据集或缓存被误同步。",
+            "自动排除会跳过 .git、node_modules、__pycache__ 等常见无关目录。",
+            "删除目标端多余文件是危险选项，建议先打开试运行查看计划再正式同步。",
+          ]}
+        />
+
+        <ScrollArea className="-mx-1 max-h-[52vh] px-1">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FieldShell label="名称" htmlFor="mirror-name">
               <Input
@@ -809,11 +824,21 @@ function ResultDialog({
 
   return (
     <Dialog open={panel !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{panel?.title}</DialogTitle>
           <DialogDescription>rsync 结果</DialogDescription>
         </DialogHeader>
+
+        <OperationGuide
+          compact
+          title="怎么看结果"
+          steps={[
+            "传输文件和字节数表示本次实际或试运行计划涉及的内容。",
+            "试运行标记表示没有写入任何变更，可用于正式拉取或推送前确认风险。",
+            "原始输出保留后端返回的完整信息，排查错误时可以直接查看或复制。",
+          ]}
+        />
 
         {r && (
           <div className="space-y-3 text-sm">
@@ -963,6 +988,17 @@ export default function MirrorPage() {
             </Button>
           </>
         }
+      />
+
+      <OperationGuide
+        title="同步镜像页怎么用"
+        steps={[
+          "先添加主机，再创建同步镜像，把远程项目目录映射到本机目录。",
+          "日常修改建议先拉取远程到本地，在本地编辑后再推送回服务器。",
+          "开启试运行后，拉取和推送只展示计划，不会写入文件，适合检查删除或覆盖风险。",
+          "下方可扫描远程仓库并添加为镜像，也可以快速拉取单个文件用于临时查看。",
+        ]}
+        notes={["需要可靠读写时优先使用同步镜像，而不是把 SSHFS 挂载当作长期同步方式。"]}
       />
 
       {noHosts ? (

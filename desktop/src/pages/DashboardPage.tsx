@@ -50,6 +50,7 @@ import {
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { EmptyState } from '@/components/empty-state'
+import { OperationGuide } from '@/components/operation-guide'
 
 interface StatCardProps {
   icon: ReactNode
@@ -240,6 +241,16 @@ export default function DashboardPage() {
         icon={<LayoutDashboard />}
         title="远程开发管理器"
         description="集中管理远程开发主机的端口转发、目录挂载、同步镜像和 AI 代理。"
+      />
+
+      <OperationGuide
+        title="仪表盘怎么用"
+        steps={[
+          "先看顶部统计，确认主机数量、运行中服务和失败服务是否正常。",
+          "常用入口在快捷操作区，可直接跳到主机、端口转发、目录挂载、同步镜像或 AI 代理。",
+          "服务表会实时展示运行状态，可直接启动、停止或重启已有服务。",
+          "如果服务失败，进入对应功能页打开日志查看原因。",
+        ]}
       />
 
       {/* Stat cards */}

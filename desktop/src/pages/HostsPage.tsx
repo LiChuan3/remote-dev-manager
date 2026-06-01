@@ -64,7 +64,6 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   Sheet,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -75,6 +74,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { OperationGuide } from "@/components/operation-guide"
+import { ResizableSheetContent } from "@/components/resizable-sheet-content"
 
 // ---------------------------------------------------------------------------
 // Form helpers
@@ -197,13 +198,24 @@ function HostFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             填写远程 SSH 主机的连接信息。
           </DialogDescription>
         </DialogHeader>
+
+        <OperationGuide
+          compact
+          title="怎么填写"
+          steps={[
+            "名称是应用内识别主机的短名字，建议使用英文、数字或横线。",
+            "用户名、主机地址和端口要能组成可用的 ssh 连接，例如 ssh ubuntu@1.2.3.4 -p 22。",
+            "密钥可以留空，留空时会使用系统默认密钥或 SSH agent。",
+            "保存后回到列表点击测试连接，确认账号、端口和密钥都正确。",
+          ]}
+        />
 
         <form
           id="host-form"
@@ -230,7 +242,7 @@ function HostFormDialog({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="host-user">用户名</Label>
               <Input
@@ -251,7 +263,7 @@ function HostFormDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="host-port">端口</Label>
               <Input
@@ -329,13 +341,25 @@ function SshConfigFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             直接写入本机 ~/.ssh/config；不会自动备份源文件。
           </DialogDescription>
         </DialogHeader>
+
+        <OperationGuide
+          compact
+          title="SSH config 写法"
+          steps={[
+            "Host 别名就是以后执行 ssh 时使用的名称，例如 ssh my-server。",
+            "HostName 填真实 IP 或域名，User 和 Port 对应远程登录账号与端口。",
+            "IdentityFile 可填 ~/.ssh/id_ed25519 这类密钥路径，留空则使用默认 SSH 行为。",
+            "ProxyJump 和 ProxyCommand 只能选择一个；保存后列表会刷新，可继续导入为应用主机。",
+          ]}
+          notes={["修改会直接写回 ~/.ssh/config，不会自动备份源文件。"]}
+        />
 
         <form
           id="ssh-config-form"
@@ -345,7 +369,7 @@ function SshConfigFormDialog({
             if (valid && !submitting) onSubmit(form)
           }}
         >
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="ssh-name">Host 别名</Label>
               <Input
@@ -367,7 +391,7 @@ function SshConfigFormDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="ssh-user">User</Label>
               <Input
@@ -399,7 +423,7 @@ function SshConfigFormDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="ssh-proxy-jump">ProxyJump</Label>
               <Input
@@ -531,13 +555,25 @@ function ImportSshConfigDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-4xl">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-hidden sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>SSH 配置管理</DialogTitle>
           <DialogDescription>
             读取并管理本机 ~/.ssh/config；修改会直接写回源文件，不会自动备份。
           </DialogDescription>
         </DialogHeader>
+
+        <OperationGuide
+          compact
+          title="怎么使用 SSH 配置管理"
+          steps={[
+            "列表会读取本机 ~/.ssh/config，并展开可识别的 Host 条目。",
+            "点新增或编辑会直接修改默认用户配置；Include 文件里的 Host 只读显示。",
+            "点导入会把该 SSH Host 加入应用主机列表，后续测试连接、端口转发和同步都可使用。",
+            "删除只删除 ~/.ssh/config 中对应的 Host 块，不会删除远程服务器或应用内已有服务。",
+          ]}
+          notes={["这里不会自动备份源文件；请确认后再保存或删除。"]}
+        />
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-muted-foreground text-xs">
@@ -580,7 +616,7 @@ function ImportSshConfigDialog({
             </p>
           </div>
         ) : (
-          <ScrollArea className="max-h-[52vh] rounded-md border">
+          <ScrollArea className="max-h-[46vh] rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -754,9 +790,12 @@ function BrowseSheet({
 
   return (
     <Sheet open={host !== null} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent
-        side="right"
-        className="w-full gap-0 sm:max-w-lg"
+      <ResizableSheetContent
+        title={host ? `浏览 ${host.name} 上的仓库` : "浏览仓库"}
+        defaultWidth={560}
+        minWidth={360}
+        maxWidth={880}
+        storageKey="rdm:browse-sheet-width"
       >
         <SheetHeader>
           <SheetTitle>
@@ -766,6 +805,18 @@ function BrowseSheet({
             扫描指定路径下可同步到本机的代码仓库。
           </SheetDescription>
         </SheetHeader>
+
+        <div className="px-4 pb-4">
+          <OperationGuide
+            compact
+            title="扫描仓库"
+            steps={[
+              "起始路径默认使用远程用户目录，可改成 ~/code、/data/project 等目录。",
+              "深度越大扫描越慢；通常 2 到 4 层足够找到 Git 仓库。",
+              "扫描到仓库后点击添加镜像，再到同步镜像页面执行拉取或推送。",
+            ]}
+          />
+        </div>
 
         <div className="flex items-end gap-2 px-4 pb-4">
           <div className="flex-1 space-y-1.5">
@@ -858,7 +909,7 @@ function BrowseSheet({
             )}
           </div>
         </ScrollArea>
-      </SheetContent>
+      </ResizableSheetContent>
     </Sheet>
   )
 }
@@ -1117,6 +1168,17 @@ export default function HostsPage() {
               </Button>
             </>
           }
+        />
+
+        <OperationGuide
+          title="主机页怎么用"
+          steps={[
+            "先点管理 SSH 配置读取或维护 ~/.ssh/config，也可以直接点添加主机手动填写连接信息。",
+            "主机保存后点击测试连接，看到 OK 和延迟后再用于端口转发、目录挂载或同步镜像。",
+            "需要发现远程代码仓库时，点击浏览仓库，扫描后可一键添加为同步镜像。",
+            "编辑只修改应用里的主机定义；SSH 配置管理里的编辑才会写回 ~/.ssh/config。",
+          ]}
+          notes={["如果窗口变窄，表格区域可横向滚动；右侧浏览面板可拖动边缘调整宽度，也可以最小化。"]}
         />
 
         <Card className="py-0">

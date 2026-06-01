@@ -61,7 +61,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   Sheet,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -71,6 +70,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { EmptyState } from '@/components/empty-state'
+import { OperationGuide } from '@/components/operation-guide'
+import { ResizableSheetContent } from '@/components/resizable-sheet-content'
 
 type ForwardType = 'local' | 'remote' | 'dynamic'
 
@@ -196,11 +197,22 @@ function AddTunnelDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>添加端口转发</DialogTitle>
           <DialogDescription>通过 SSH 连接转发端口。</DialogDescription>
         </DialogHeader>
+
+        <OperationGuide
+          compact
+          title="端口转发怎么填"
+          steps={[
+            "选择一个已测试可用的主机；代理保持 direct 即直连，也可以选择 clash 或某台跳板主机。",
+            "本地转发用于把远程服务映射到本机，例如本机 15432 → 远程 127.0.0.1:5432。",
+            "远程转发用于把本机服务开放给远程主机；动态转发会在本机开一个 SOCKS 代理端口。",
+            "创建后在列表里点击启动，运行中可切换代理、查看日志、停止或重启。",
+          ]}
+        />
 
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -213,7 +225,7 @@ function AddTunnelDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="tunnel-host">主机</Label>
               <Select value={host} onValueChange={setHost}>
@@ -254,7 +266,7 @@ function AddTunnelDialog({
               {forwards.map((row, i) => (
                 <div
                   key={i}
-                  className="flex items-end gap-2 rounded-lg border bg-muted/30 p-2"
+                  className="flex flex-wrap items-end gap-2 rounded-lg border bg-muted/30 p-2"
                 >
                   <Select
                     value={row.type}
@@ -279,7 +291,7 @@ function AddTunnelDialog({
                   {row.type !== 'dynamic' && (
                     <>
                       <Input
-                        className="flex-1"
+                        className="min-w-36 flex-1"
                         placeholder="127.0.0.1"
                         value={row.remote_host}
                         onChange={(e) => setRow(i, { remote_host: e.target.value })}
@@ -379,7 +391,13 @@ function LogSheet({
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl">
+      <ResizableSheetContent
+        title={tunnel ? `日志 · ${tunnel}` : '日志'}
+        defaultWidth={720}
+        minWidth={380}
+        maxWidth={1040}
+        storageKey="rdm:tunnel-log-width"
+      >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <ScrollText className="size-4" />
@@ -394,6 +412,17 @@ function LogSheet({
             {connected ? '实时输出' : '连接中…'}
           </SheetDescription>
         </SheetHeader>
+        <div className="px-4 pb-4">
+          <OperationGuide
+            compact
+            title="日志面板"
+            steps={[
+              "打开后会先加载最近日志，再持续追加实时输出。",
+              "如果端口占用、认证失败或跳板不可达，错误会显示在这里。",
+              "右侧面板左边缘可以拖动调整宽度，右上角可以最小化或关闭。",
+            ]}
+          />
+        </div>
         <ScrollArea className="mx-4 mb-4 flex-1 rounded-lg border bg-muted/30">
           <div
             ref={viewportRef}
@@ -406,7 +435,7 @@ function LogSheet({
             )}
           </div>
         </ScrollArea>
-      </SheetContent>
+      </ResizableSheetContent>
     </Sheet>
   )
 }
@@ -657,6 +686,17 @@ export default function TunnelsPage() {
             添加端口转发
           </Button>
         }
+      />
+
+      <OperationGuide
+        title="端口转发页怎么用"
+        steps={[
+          "先在主机页添加并测试 SSH 主机，再回到这里添加转发规则。",
+          "创建规则后点击启动，状态变为运行中即可在本机或远程访问对应端口。",
+          "每条规则可单独停止、重启、查看日志，也可以在列表里临时切换代理。",
+          "本地端口被占用、远程端口不可达、密钥错误都会在日志里显示。",
+        ]}
+        notes={["窗口变窄时表格可横向滚动；日志面板支持拖动宽度和最小化。"]}
       />
 
       <Card className="py-0">

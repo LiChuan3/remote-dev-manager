@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/page-header"
 import { StatusBadge, StatusDot } from "@/components/status-badge"
 import { EmptyState } from "@/components/empty-state"
 import { CopyButton } from "@/components/copy-button"
+import { OperationGuide } from "@/components/operation-guide"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -422,6 +423,17 @@ export default function AiProxyPage() {
   return (
     <div className="space-y-6">
       {header}
+
+      <OperationGuide
+        title="AI 代理怎么用"
+        steps={[
+          "先确认本机 Clash 正在运行，并记下本机代理端口，默认常见为 7897。",
+          "选择远程主机后点击启用 AI 代理，应用会建立反向 SSH 隧道。",
+          "启用成功后，在结果区复制远程 Claude Code 或 Codex 启动命令。",
+          "如果远程主机不再需要代理，点击禁用会停止相关反向隧道。",
+        ]}
+        notes={["写入远程环境会修改远程 ~/.bashrc；不确定时先保持关闭，只使用结果区给出的临时命令。"]}
+      />
 
       {/* Explainer / flow */}
       <Card>

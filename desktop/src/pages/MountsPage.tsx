@@ -59,7 +59,6 @@ import {
 } from '@/components/ui/select'
 import {
   Sheet,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -70,6 +69,8 @@ import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { EmptyState } from '@/components/empty-state'
+import { OperationGuide } from '@/components/operation-guide'
+import { ResizableSheetContent } from '@/components/resizable-sheet-content'
 
 interface MountDef {
   name: string
@@ -250,11 +251,25 @@ function AddMountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>添加目录挂载</DialogTitle>
           <DialogDescription>通过 SSHFS 把远程目录挂载到本机。</DialogDescription>
         </DialogHeader>
+
+        <OperationGuide
+          compact
+          title="目录挂载怎么填"
+          steps={[
+            "选择已测试可用的主机，远程路径填写服务器上的目录，例如 /home/ubuntu/project。",
+            "挂载点可留空，应用会自动放到工作区 mounts 目录；也可以填一个本机空目录。",
+            "选项每行一个 sshfs -o 参数，例如 reconnect 或 ServerAliveInterval=15。",
+            "创建后在列表里点击挂载；需要排查时打开日志查看 sshfs 输出。",
+          ]}
+          notes={[
+            "SSHFS/SSHFS-Win 更适合读取、浏览和临时编辑；需要稳定读写同步时，建议使用同步镜像拉取到本地修改后再推送。",
+          ]}
+        />
 
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -267,7 +282,7 @@ function AddMountDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="mount-host">主机</Label>
               <Select value={host} onValueChange={setHost}>
@@ -376,7 +391,13 @@ function LogSheet({
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl">
+      <ResizableSheetContent
+        title={mount ? `日志 · ${mount}` : '日志'}
+        defaultWidth={720}
+        minWidth={380}
+        maxWidth={1040}
+        storageKey="rdm:mount-log-width"
+      >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <ScrollText className="size-4" />
@@ -391,6 +412,17 @@ function LogSheet({
             {connected ? '实时输出' : '连接中…'}
           </SheetDescription>
         </SheetHeader>
+        <div className="px-4 pb-4">
+          <OperationGuide
+            compact
+            title="日志面板"
+            steps={[
+              "打开后会先加载最近日志，再持续追加实时输出。",
+              "如果缺少 WinFsp、SSHFS-Win、权限不足或远程路径不存在，错误会显示在这里。",
+              "右侧面板左边缘可以拖动调整宽度，右上角可以最小化或关闭。",
+            ]}
+          />
+        </div>
         <ScrollArea className="mx-4 mb-4 flex-1 rounded-lg border bg-muted/30">
           <div
             ref={viewportRef}
@@ -403,7 +435,7 @@ function LogSheet({
             )}
           </div>
         </ScrollArea>
-      </SheetContent>
+      </ResizableSheetContent>
     </Sheet>
   )
 }
@@ -658,6 +690,17 @@ export default function MountsPage() {
             添加目录挂载
           </Button>
         }
+      />
+
+      <OperationGuide
+        title="目录挂载页怎么用"
+        steps={[
+          "先确认页面顶部依赖检查为可用；缺少 WinFsp 或 SSHFS-Win 时可点一键安装。",
+          "添加挂载时选择主机和远程目录，保存后点击挂载，状态变为运行中即可在本机访问目录。",
+          "卸载会停止本机挂载，不会删除远程目录；删除配置会先卸载再从应用配置移除。",
+          "写入远程文件不建议依赖挂载作为稳定同步方案，重要修改请使用同步镜像拉取和推送。",
+        ]}
+        notes={["窗口变窄时表格可横向滚动；日志面板支持拖动宽度和最小化。"]}
       />
 
       <MountDiagnosticsPanel

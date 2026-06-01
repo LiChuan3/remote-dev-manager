@@ -34,6 +34,7 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { PageHeader } from '@/components/page-header'
 import { CopyButton } from '@/components/copy-button'
+import { OperationGuide } from '@/components/operation-guide'
 
 const REPO_URL = 'https://github.com/LiChuan3/remote-dev-manager'
 const HEALTH_RETRY_COUNT = 20
@@ -199,6 +200,16 @@ export default function SettingsPage() {
         icon={<SettingsIcon />}
         title="设置"
         description="管理应用配置、外观、登录启动和维护操作。"
+      />
+
+      <OperationGuide
+        title="设置页怎么用"
+        steps={[
+          "外观用于切换浅色、深色或跟随系统主题。",
+          "启动里的登录时启动只在桌面应用中生效，开启后下次登录系统会自动打开。",
+          "配置区域展示当前工作区、配置路径和默认代理；点重新加载配置可让后端重新读取配置文件。",
+          "后端服务区域可查看当前动态端口和在线状态；关于与操作里可打开 API 文档或退出应用。",
+        ]}
       />
 
       {/* Appearance */}
