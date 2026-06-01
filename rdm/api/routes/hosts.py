@@ -532,7 +532,7 @@ async def test_host(request: Request, name: str) -> dict:
 
 
 @router.post("/api/hosts/{name}/browse")
-async def browse_host(request: Request, name: str, body: BrowseIn) -> dict:
+async def browse_host(request: Request, name: str, body: BrowseIn) -> list[dict]:
     mgr = _manager(request)
     host = mgr.host(name)
     if host is None:

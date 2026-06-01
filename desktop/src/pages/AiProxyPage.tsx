@@ -109,7 +109,12 @@ function SwitchRow({
         </Label>
         <p className="text-muted-foreground text-xs">{hint}</p>
       </div>
-      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+      <Switch
+        id={id}
+        aria-label={label}
+        checked={checked}
+        onCheckedChange={onChange}
+      />
     </div>
   )
 }

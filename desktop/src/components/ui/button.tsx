@@ -41,26 +41,49 @@ const buttonVariants = cva(
   }
 )
 
+function textFromNode(node: React.ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node)
+  }
+  if (Array.isArray(node)) {
+    return node.map(textFromNode).join(" ")
+  }
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    return textFromNode(node.props.children)
+  }
+  return ""
+}
+
 function Button({
   className,
   variant = "default",
   size = "default",
   asChild = false,
+  title,
+  "aria-label": ariaLabel,
+  children,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
   }) {
   const Comp = asChild ? Slot.Root : "button"
+  const textTitle = textFromNode(children).replace(/\s+/g, " ").trim()
+  const inferredTitle =
+    title ?? (typeof ariaLabel === "string" ? ariaLabel : textTitle)
 
   return (
     <Comp
       data-slot="button"
       data-variant={variant}
       data-size={size}
+      title={inferredTitle || undefined}
+      aria-label={ariaLabel}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
-    />
+    >
+      {children}
+    </Comp>
   )
 }
 

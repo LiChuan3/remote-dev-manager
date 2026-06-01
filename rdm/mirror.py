@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -111,10 +112,35 @@ def _ssh_exec(
     """Run command on remote via SSH. Returns (returncode, stdout, stderr)."""
     cmd = _ssh_cmd_base(host) + [f"{host.user}@{host.host}", command]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
         return result.returncode, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
         return -1, "", "SSH command timed out"
+
+
+def _remote_path_expr(path: str) -> str:
+    """Return a POSIX shell expression for a remote path, preserving ~/ expansion."""
+    value = (path or "~").strip() or "~"
+    if value == "~":
+        return '"$HOME"'
+    if value.startswith("~/"):
+        return f'"$HOME"/{shlex.quote(value[2:])}'
+    return shlex.quote(value)
+
+
+def _remote_join_display(base_path: str, rel_path: str) -> str:
+    base = (base_path or "~").strip() or "~"
+    rel = rel_path.lstrip("./")
+    if not rel:
+        return base
+    return f"{base.rstrip('/')}/{rel}"
 
 
 def _build_rsync_cmd(
@@ -294,6 +320,13 @@ def list_remote_dirs(
     max_depth: int = 2,
 ) -> list[dict[str, Any]]:
     """SSH to remote and discover directories that look like code projects."""
+    base_path = (base_path or "~").strip() or "~"
+    try:
+        depth = int(max_depth)
+    except (TypeError, ValueError):
+        depth = 2
+    depth = max(1, min(depth, 8))
+
     markers = [
         ".git", "Cargo.toml", "package.json", "pyproject.toml",
         "setup.py", "setup.cfg", "go.mod", "CMakeLists.txt",
@@ -301,20 +334,32 @@ def list_remote_dirs(
         "requirements.txt", "environment.yml", "Pipfile",
         "composer.json", "Gemfile", "mix.exs",
     ]
+    prune_dirs = [
+        ".cache", ".conda", ".mamba", ".venv", "venv", "env",
+        "node_modules", "__pycache__", ".tox", ".nox",
+        "dist", "build", "target", ".next", ".nuxt",
+        "datasets", "data", "wandb", "mlruns", "runs",
+    ]
 
-    find_exprs = " -o ".join(f'-name "{m}"' for m in markers)
-    # Expand ~ and find project markers, output their parent directories
+    find_exprs = " -o ".join(f"-name {shlex.quote(m)}" for m in markers)
+    prune_exprs = " -o ".join(f"-name {shlex.quote(m)}" for m in prune_dirs)
+    base_expr = _remote_path_expr(base_path)
+
+    # Expand the base path on the remote shell and find project markers.
+    # Marker names can be files or directories (.git), so do not restrict to -type f.
     cmd = (
-        f"cd {base_path} && "
-        f'find . -maxdepth {max_depth} -type f \\( {find_exprs} \\) 2>/dev/null '
-        f'| while read f; do dirname "$f"; done | sort -u'
+        f"base={base_expr}; "
+        'cd "$base" || exit 70; '
+        f'find . -maxdepth {depth} '
+        f'\\( {prune_exprs} \\) -prune -o \\( {find_exprs} \\) -print 2>/dev/null '
+        f'| while IFS= read -r f; do dirname "$f"; done | sort -u'
     )
 
-    rc, stdout, stderr = _ssh_exec(host, cmd, timeout=30)
+    rc, stdout, stderr = _ssh_exec(host, cmd, timeout=90)
     if rc != 0:
-        print(
-            f"Warning: remote scan returned code {rc}: {stderr.strip()}",
-            file=sys.stderr,
+        detail = (stderr or stdout or "remote scan failed").strip()
+        raise RuntimeError(
+            f"远程仓库扫描失败（退出码 {rc}）：{detail or '没有返回错误信息'}"
         )
 
     repos: list[dict[str, Any]] = []
@@ -325,18 +370,17 @@ def list_remote_dirs(
             continue
         seen.add(line)
 
-        # Get full path
-        if base_path == "~":
-            full_path = f"~/{line.lstrip('./')}" if line != "." else "~"
-        else:
-            full_path = (
-                f"{base_path}/{line.lstrip('./')}" if line != "." else base_path
-            )
+        rel_path = "." if line == "." else line
+        full_path = _remote_join_display(base_path, "" if rel_path == "." else rel_path)
 
         # Detect what markers are present
+        rel_expr = shlex.quote(rel_path)
         marker_cmd = (
-            f"cd {base_path}/{line} 2>/dev/null && "
-            f'ls -d {" ".join(markers)} 2>/dev/null'
+            f"base={base_expr}; "
+            'cd "$base" || exit 70; '
+            f"cd {rel_expr} 2>/dev/null || exit 71; "
+            f'find . -maxdepth 1 \\( {find_exprs} \\) -print 2>/dev/null '
+            "| sed 's#^./##'"
         )
         _, marker_out, _ = _ssh_exec(host, marker_cmd, timeout=10)
         found_markers = [
@@ -346,7 +390,11 @@ def list_remote_dirs(
         # Get total size
         _, size_out, _ = _ssh_exec(
             host,
-            f"du -sh {base_path}/{line} 2>/dev/null | cut -f1",
+            (
+                f"base={base_expr}; "
+                'cd "$base" || exit 70; '
+                f"du -sh -- {rel_expr} 2>/dev/null | cut -f1"
+            ),
             timeout=15,
         )
         size = size_out.strip() or "?"

@@ -467,6 +467,7 @@ function AddMirrorDialog({
               <div className="flex flex-col gap-3 pt-1">
                 <label className="flex cursor-pointer items-center gap-2.5 text-sm">
                   <Switch
+                    aria-label="自动排除无关目录"
                     checked={autoExclude}
                     onCheckedChange={setAutoExclude}
                   />
@@ -474,6 +475,7 @@ function AddMirrorDialog({
                 </label>
                 <label className="flex cursor-pointer items-center gap-2.5 text-sm">
                   <Switch
+                    aria-label="删除目标端多余文件"
                     checked={del}
                     onCheckedChange={setDel}
                     className="data-checked:bg-rose-500"
@@ -979,7 +981,11 @@ export default function MirrorPage() {
         actions={
           <>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <Switch checked={dryRun} onCheckedChange={setDryRun} />
+              <Switch
+                aria-label="试运行"
+                checked={dryRun}
+                onCheckedChange={setDryRun}
+              />
               <span>试运行</span>
             </label>
             <Button onClick={() => openAdd(null)} disabled={noHosts}>
