@@ -7,14 +7,14 @@ import glob
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
 from rdm import config_writer, mirror, remote
 from rdm.api.manager import ServiceManager
-from rdm.api.schemas import BrowseIn, HostIn, HostUpdate, SshConfigHost
+from rdm.api.schemas import BrowseIn, HostIn, HostUpdate, SshConfigHost, SshConfigHostIn
 
 router = APIRouter()
 
@@ -34,6 +34,7 @@ class _SshHostBlock:
     options: dict[str, str] = field(default_factory=dict)
     source: str = ""
     line: int = 0
+    end_line: int = 0
 
 
 def _manager(request: Request) -> ServiceManager:
@@ -158,8 +159,10 @@ def _read_ssh_blocks(path: Path, seen_files: set[Path]) -> list[_SshHostBlock]:
 
     blocks: list[_SshHostBlock] = []
     current: Optional[_SshHostBlock] = None
+    last_line = 0
     with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
         for line_no, raw_line in enumerate(fh, start=1):
+            last_line = line_no
             directive = _read_ssh_directive(raw_line)
             if directive is None:
                 continue
@@ -171,10 +174,14 @@ def _read_ssh_blocks(path: Path, seen_files: set[Path]) -> list[_SshHostBlock]:
                 continue
 
             if key == "match":
+                if current is not None:
+                    current.end_line = line_no - 1
                 current = None
                 continue
 
             if key == "host":
+                if current is not None:
+                    current.end_line = line_no - 1
                 current = _SshHostBlock(
                     patterns=_split_ssh_words(value),
                     source=str(resolved),
@@ -186,6 +193,8 @@ def _read_ssh_blocks(path: Path, seen_files: set[Path]) -> list[_SshHostBlock]:
             if current is not None and key in _SSH_IMPORT_OPTIONS:
                 current.options.setdefault(key, value)
 
+    if current is not None:
+        current.end_line = last_line
     return blocks
 
 
@@ -215,8 +224,17 @@ def _parse_ssh_port(value: str) -> int:
     return port if 0 < port < 65536 else 22
 
 
+def _source_file(source: str) -> str:
+    if source.endswith(":0"):
+        return source[:-2]
+    path, sep, line = source.rpartition(":")
+    return path if sep and line.isdigit() else source
+
+
 def _ssh_config_hosts(path: Path) -> list[SshConfigHost]:
-    blocks = _read_ssh_blocks(path, set())
+    root_path = path.expanduser().resolve(strict=False)
+    root_source = str(root_path)
+    blocks = _read_ssh_blocks(root_path, set())
     aliases: list[tuple[str, _SshHostBlock]] = []
     seen_aliases: set[str] = set()
 
@@ -250,9 +268,150 @@ def _ssh_config_hosts(path: Path) -> list[SshConfigHost]:
                 proxy_jump=options.get("proxyjump", ""),
                 proxy_command=options.get("proxycommand", ""),
                 source=f"{source_block.source}:{source_block.line}",
+                editable=(
+                    source_block.source == root_source
+                    and source_block.patterns == [alias]
+                ),
             )
         )
     return hosts
+
+
+def _normalise_ssh_config_body(body: SshConfigHostIn) -> dict[str, Any]:
+    data = body.model_dump()
+    data = {
+        key: (value.strip() if isinstance(value, str) else value)
+        for key, value in data.items()
+    }
+    name = data.get("name") or ""
+    if not name:
+        raise ValueError("Host 别名不能为空。")
+    if any(ch.isspace() for ch in name) or any(ch in name for ch in "*?!"):
+        raise ValueError("Host 别名不能包含空格、通配符或 !。")
+
+    for key in ("hostname", "user", "identity", "proxy_jump", "proxy_command"):
+        value = data.get(key) or ""
+        if "\n" in value or "\r" in value:
+            raise ValueError(f"{key} 不能包含换行。")
+
+    port = _parse_ssh_port(str(data.get("port", 22)))
+    data["port"] = port
+
+    if data.get("proxy_jump") and data.get("proxy_command"):
+        raise ValueError("ProxyJump 和 ProxyCommand 只能填写一个。")
+    return data
+
+
+def _render_ssh_host_block(body: SshConfigHostIn) -> str:
+    data = _normalise_ssh_config_body(body)
+    lines = [f"Host {data['name']}"]
+    if data["hostname"]:
+        lines.append(f"  HostName {data['hostname']}")
+    if data["user"]:
+        lines.append(f"  User {data['user']}")
+    if data["port"] != 22:
+        lines.append(f"  Port {data['port']}")
+    if data["identity"]:
+        lines.append(f"  IdentityFile {data['identity']}")
+    if data["proxy_jump"]:
+        lines.append(f"  ProxyJump {data['proxy_jump']}")
+    if data["proxy_command"]:
+        lines.append(f"  ProxyCommand {data['proxy_command']}")
+    return "\n".join(lines) + "\n"
+
+
+def _read_ssh_config_text(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _write_ssh_config_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _find_ssh_config_block(path: Path, name: str) -> _SshHostBlock | None:
+    root_path = path.expanduser().resolve(strict=False)
+    for block in _read_ssh_blocks(root_path, set()):
+        if name in block.patterns:
+            return block
+    return None
+
+
+def _ensure_editable_block(path: Path, name: str) -> _SshHostBlock:
+    root_path = path.expanduser().resolve(strict=False)
+    blocks = [
+        block
+        for block in _read_ssh_blocks(root_path, set())
+        if name in block.patterns
+    ]
+    block = next((b for b in blocks if b.source == str(root_path)), None)
+    if block is None and blocks:
+        block = blocks[0]
+    if block is None:
+        raise KeyError(f"Host '{name}' 不存在。")
+    if block.source != str(root_path):
+        raise ValueError("该 Host 来自 Include 文件，当前只直接修改 ~/.ssh/config。")
+    if block.patterns != [name]:
+        raise ValueError("该 Host 块包含多个别名或模式，当前不支持图形化修改。")
+    return block
+
+
+def _ssh_config_create(path: Path, body: SshConfigHostIn) -> SshConfigHost:
+    root_path = path.expanduser().resolve(strict=False)
+    data = _normalise_ssh_config_body(body)
+    existing = _find_ssh_config_block(root_path, data["name"])
+    if existing is not None:
+        raise ValueError(f"Host '{data['name']}' 已存在。")
+
+    text = _read_ssh_config_text(root_path)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    if text and not text.endswith("\n\n"):
+        text += "\n"
+    text += _render_ssh_host_block(body)
+    _write_ssh_config_text(root_path, text)
+    return _ssh_config_get(root_path, data["name"])
+
+
+def _ssh_config_update(path: Path, name: str, body: SshConfigHostIn) -> SshConfigHost:
+    root_path = path.expanduser().resolve(strict=False)
+    data = _normalise_ssh_config_body(body)
+    block = _ensure_editable_block(root_path, name)
+    if data["name"] != name:
+        existing = _find_ssh_config_block(root_path, data["name"])
+        if existing is not None:
+            raise ValueError(f"Host '{data['name']}' 已存在。")
+
+    lines = _read_ssh_config_text(root_path).splitlines(keepends=True)
+    start = block.line - 1
+    end = block.end_line if block.end_line else block.line
+    lines[start:end] = _render_ssh_host_block(body).splitlines(keepends=True)
+    _write_ssh_config_text(root_path, "".join(lines))
+    return _ssh_config_get(root_path, data["name"])
+
+
+def _ssh_config_delete(path: Path, name: str) -> dict[str, Any]:
+    root_path = path.expanduser().resolve(strict=False)
+    block = _ensure_editable_block(root_path, name)
+    lines = _read_ssh_config_text(root_path).splitlines(keepends=True)
+    start = block.line - 1
+    end = block.end_line if block.end_line else block.line
+    if end < len(lines) and lines[end].strip() == "":
+        end += 1
+    del lines[start:end]
+    _write_ssh_config_text(root_path, "".join(lines))
+    return {"ok": True, "name": name}
+
+
+def _ssh_config_get(path: Path, name: str) -> SshConfigHost:
+    for item in _ssh_config_hosts(path):
+        if item.name == name:
+            return item
+    raise KeyError(f"Host '{name}' 不存在。")
 
 
 @router.get("/api/hosts")
@@ -270,6 +429,36 @@ async def list_ssh_config_hosts(path: Optional[str] = None) -> list[SshConfigHos
     )
     try:
         return _ssh_config_hosts(config_path)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/hosts/ssh-config")
+async def create_ssh_config_host(body: SshConfigHostIn) -> SshConfigHost:
+    try:
+        return await run_in_threadpool(
+            _ssh_config_create, _default_ssh_config_path(), body
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/api/hosts/ssh-config/{name}")
+async def update_ssh_config_host(name: str, body: SshConfigHostIn) -> SshConfigHost:
+    try:
+        return await run_in_threadpool(
+            _ssh_config_update, _default_ssh_config_path(), name, body
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/api/hosts/ssh-config/{name}")
+async def delete_ssh_config_host(name: str) -> dict:
+    try:
+        return await run_in_threadpool(
+            _ssh_config_delete, _default_ssh_config_path(), name
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

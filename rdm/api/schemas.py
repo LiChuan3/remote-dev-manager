@@ -42,6 +42,17 @@ class SshConfigHost(_Base):
     proxy_jump: str = ""
     proxy_command: str = ""
     source: str = ""
+    editable: bool = False
+
+
+class SshConfigHostIn(_Base):
+    name: str
+    hostname: str = ""
+    user: str = ""
+    port: int = 22
+    identity: str = ""
+    proxy_jump: str = ""
+    proxy_command: str = ""
 
 
 # ---------------------------------------------------------------------------

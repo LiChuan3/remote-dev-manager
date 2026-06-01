@@ -18,6 +18,17 @@ export interface SshConfigHost {
   proxy_jump: string
   proxy_command: string
   source: string
+  editable: boolean
+}
+
+export interface SshConfigHostInput {
+  name: string
+  hostname: string
+  user: string
+  port: number
+  identity: string
+  proxy_jump: string
+  proxy_command: string
 }
 
 export type ServiceKind = 'tunnel' | 'mount' | 'reverse_proxy'

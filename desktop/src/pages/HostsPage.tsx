@@ -12,12 +12,19 @@ import {
   Loader2,
   Search,
   Download,
+  FileCog,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, ApiError } from "@/lib/api"
 import { fmtBytes } from "@/lib/format"
-import type { Host, RepoInfo, SshConfigHost, TestResult } from "@/lib/types"
+import type {
+  Host,
+  RepoInfo,
+  SshConfigHost,
+  SshConfigHostInput,
+  TestResult,
+} from "@/lib/types"
 
 import { PageHeader } from "@/components/page-header"
 import { EmptyState } from "@/components/empty-state"
@@ -81,12 +88,32 @@ interface HostForm {
   identity: string
 }
 
+interface SshConfigForm {
+  name: string
+  hostname: string
+  user: string
+  port: string
+  identity: string
+  proxy_jump: string
+  proxy_command: string
+}
+
 const emptyForm: HostForm = {
   name: "",
   user: "",
   host: "",
   port: "22",
   identity: "",
+}
+
+const emptySshConfigForm: SshConfigForm = {
+  name: "",
+  hostname: "",
+  user: "",
+  port: "22",
+  identity: "",
+  proxy_jump: "",
+  proxy_command: "",
 }
 
 function toBody(f: HostForm) {
@@ -96,6 +123,30 @@ function toBody(f: HostForm) {
     host: f.host.trim(),
     port: Number(f.port) || 22,
     identity: f.identity.trim() || undefined,
+  }
+}
+
+function sshConfigToBody(f: SshConfigForm): SshConfigHostInput {
+  return {
+    name: f.name.trim(),
+    hostname: f.hostname.trim(),
+    user: f.user.trim(),
+    port: Number(f.port) || 22,
+    identity: f.identity.trim(),
+    proxy_jump: f.proxy_jump.trim(),
+    proxy_command: f.proxy_command.trim(),
+  }
+}
+
+function sshConfigToForm(item: SshConfigHost): SshConfigForm {
+  return {
+    name: item.name,
+    hostname: item.hostname,
+    user: item.user,
+    port: String(item.port || 22),
+    identity: item.identity,
+    proxy_jump: item.proxy_jump,
+    proxy_command: item.proxy_command,
   }
 }
 
@@ -245,6 +296,150 @@ function HostFormDialog({
   )
 }
 
+interface SshConfigFormDialogProps {
+  open: boolean
+  title: string
+  initial: SshConfigForm
+  submitting: boolean
+  onClose: () => void
+  onSubmit: (form: SshConfigForm) => void
+}
+
+function SshConfigFormDialog({
+  open,
+  title,
+  initial,
+  submitting,
+  onClose,
+  onSubmit,
+}: SshConfigFormDialogProps) {
+  const [form, setForm] = useState<SshConfigForm>(initial)
+
+  const [seed, setSeed] = useState(initial)
+  if (open && seed !== initial) {
+    setSeed(initial)
+    setForm(initial)
+  }
+
+  const set =
+    (k: keyof SshConfigForm) => (e: ChangeEvent<HTMLInputElement>) =>
+      setForm((prev) => ({ ...prev, [k]: e.target.value }))
+
+  const valid = form.name.trim() !== "" && !(form.proxy_jump && form.proxy_command)
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            直接写入本机 ~/.ssh/config；不会自动备份源文件。
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          id="ssh-config-form"
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (valid && !submitting) onSubmit(form)
+          }}
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="ssh-name">Host 别名</Label>
+              <Input
+                id="ssh-name"
+                placeholder="my-server"
+                value={form.name}
+                onChange={set("name")}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ssh-hostname">HostName</Label>
+              <Input
+                id="ssh-hostname"
+                placeholder="1.2.3.4 或 example.com"
+                value={form.hostname}
+                onChange={set("hostname")}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="ssh-user">User</Label>
+              <Input
+                id="ssh-user"
+                placeholder="ubuntu"
+                value={form.user}
+                onChange={set("user")}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ssh-port">Port</Label>
+              <Input
+                id="ssh-port"
+                type="number"
+                placeholder="22"
+                value={form.port}
+                onChange={set("port")}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="ssh-identity">IdentityFile</Label>
+            <Input
+              id="ssh-identity"
+              placeholder="~/.ssh/id_ed25519"
+              value={form.identity}
+              onChange={set("identity")}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="ssh-proxy-jump">ProxyJump</Label>
+              <Input
+                id="ssh-proxy-jump"
+                placeholder="jump-host"
+                value={form.proxy_jump}
+                onChange={set("proxy_jump")}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ssh-proxy-command">ProxyCommand</Label>
+              <Input
+                id="ssh-proxy-command"
+                placeholder="connect -S 127.0.0.1:7897 %h %p"
+                value={form.proxy_command}
+                onChange={set("proxy_command")}
+              />
+            </div>
+          </div>
+          {form.proxy_jump && form.proxy_command ? (
+            <p className="text-xs text-rose-600 dark:text-rose-400">
+              ProxyJump 和 ProxyCommand 只能填写一个。
+            </p>
+          ) : null}
+        </form>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+            取消
+          </Button>
+          <Button type="submit" form="ssh-config-form" disabled={!valid || submitting}>
+            {submitting ? <Loader2 className="animate-spin" /> : null}
+            保存 SSH 配置
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // SSH config import dialog
 // ---------------------------------------------------------------------------
@@ -264,6 +459,10 @@ function ImportSshConfigDialog({
   onClose,
   onImport,
 }: ImportSshConfigDialogProps) {
+  const qc = useQueryClient()
+  const [editingConfig, setEditingConfig] = useState<SshConfigHost | null>(null)
+  const [creatingConfig, setCreatingConfig] = useState(false)
+
   const sshConfigQuery = useQuery({
     queryKey: ["hosts", "ssh-config"],
     queryFn: () => api.listSshConfigHosts(),
@@ -284,15 +483,71 @@ function ImportSshConfigDialog({
     return "默认 SSH 配置"
   }
 
+  const refetchSshConfig = () => {
+    void qc.invalidateQueries({ queryKey: ["hosts", "ssh-config"] })
+  }
+
+  const createConfigMut = useMutation({
+    mutationFn: (form: SshConfigForm) => api.createSshConfigHost(sshConfigToBody(form)),
+    onSuccess: (item) => {
+      toast.success(`SSH Host "${item.name}" 已写入`)
+      setCreatingConfig(false)
+      refetchSshConfig()
+    },
+    onError: (e) =>
+      toast.error("无法写入 SSH 配置", { description: errMessage(e) }),
+  })
+
+  const updateConfigMut = useMutation({
+    mutationFn: ({ name, form }: { name: string; form: SshConfigForm }) =>
+      api.updateSshConfigHost(name, sshConfigToBody(form)),
+    onSuccess: (item) => {
+      toast.success(`SSH Host "${item.name}" 已更新`)
+      setEditingConfig(null)
+      refetchSshConfig()
+    },
+    onError: (e) =>
+      toast.error("无法更新 SSH 配置", { description: errMessage(e) }),
+  })
+
+  const deleteConfigMut = useMutation({
+    mutationFn: (name: string) => api.removeSshConfigHost(name),
+    onSuccess: () => {
+      toast.success("SSH Host 已删除")
+      refetchSshConfig()
+    },
+    onError: (e) =>
+      toast.error("无法删除 SSH 配置", { description: errMessage(e) }),
+  })
+
+  const removeConfig = (item: SshConfigHost) => {
+    if (!item.editable || deleteConfigMut.isPending) return
+    const ok = window.confirm(
+      `确定从 ~/.ssh/config 删除 Host "${item.name}"？此操作不会自动备份源文件。`,
+    )
+    if (ok) deleteConfigMut.mutate(item.name)
+  }
+
   return (
+    <>
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>导入 SSH 配置</DialogTitle>
+          <DialogTitle>SSH 配置管理</DialogTitle>
           <DialogDescription>
-            读取本机 ~/.ssh/config，导入后通过 SSH 别名连接。
+            读取并管理本机 ~/.ssh/config；修改会直接写回源文件，不会自动备份。
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-muted-foreground text-xs">
+            Include 文件中的 Host 会只读显示；当前只直接修改默认用户配置。
+          </p>
+          <Button size="sm" onClick={() => setCreatingConfig(true)}>
+            <Plus />
+            新增 SSH Host
+          </Button>
+        </div>
 
         {sshConfigQuery.isLoading ? (
           <div className="space-y-2">
@@ -361,15 +616,41 @@ function ImportSshConfigDialog({
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant={already ? "secondary" : "outline"}
-                          disabled={already || missingUser || importingName !== null}
-                          onClick={() => onImport(item)}
-                        >
-                          {busy ? <Loader2 className="animate-spin" /> : <Download />}
-                          {already ? "已导入" : missingUser ? "缺少用户" : "导入"}
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant={already ? "secondary" : "outline"}
+                            disabled={already || missingUser || importingName !== null}
+                            onClick={() => onImport(item)}
+                          >
+                            {busy ? <Loader2 className="animate-spin" /> : <Download />}
+                            {already ? "已导入" : missingUser ? "缺少用户" : "导入"}
+                          </Button>
+                          {item.editable ? (
+                            <>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                aria-label={`编辑 ${item.name}`}
+                                onClick={() => setEditingConfig(item)}
+                              >
+                                <Pencil />
+                              </Button>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                aria-label={`删除 ${item.name}`}
+                                className="text-rose-500 hover:text-rose-500"
+                                disabled={deleteConfigMut.isPending}
+                                onClick={() => removeConfig(item)}
+                              >
+                                <Trash2 />
+                              </Button>
+                            </>
+                          ) : (
+                            <Badge variant="outline">只读</Badge>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -386,6 +667,25 @@ function ImportSshConfigDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <SshConfigFormDialog
+      open={creatingConfig}
+      title="新增 SSH Host"
+      initial={emptySshConfigForm}
+      submitting={createConfigMut.isPending}
+      onClose={() => setCreatingConfig(false)}
+      onSubmit={(form) => createConfigMut.mutate(form)}
+    />
+    <SshConfigFormDialog
+      open={editingConfig !== null}
+      title={editingConfig ? `编辑 ${editingConfig.name}` : "编辑 SSH Host"}
+      initial={editingConfig ? sshConfigToForm(editingConfig) : emptySshConfigForm}
+      submitting={updateConfigMut.isPending}
+      onClose={() => setEditingConfig(null)}
+      onSubmit={(form) =>
+        editingConfig && updateConfigMut.mutate({ name: editingConfig.name, form })
+      }
+    />
+    </>
   )
 }
 
@@ -808,8 +1108,8 @@ export default function HostsPage() {
           actions={
             <>
               <Button variant="outline" onClick={() => setImportOpen(true)}>
-                <Download />
-                导入 SSH 配置
+                <FileCog />
+                管理 SSH 配置
               </Button>
               <Button onClick={() => setAddOpen(true)}>
                 <Plus />
@@ -848,8 +1148,8 @@ export default function HostsPage() {
                 action={
                   <div className="flex flex-wrap justify-center gap-2">
                     <Button variant="outline" onClick={() => setImportOpen(true)}>
-                      <Download />
-                      导入 SSH 配置
+                      <FileCog />
+                      管理 SSH 配置
                     </Button>
                     <Button onClick={() => setAddOpen(true)}>
                       <Plus />
