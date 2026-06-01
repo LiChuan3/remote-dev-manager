@@ -23,7 +23,7 @@ export function ResizableSheetContent({
   defaultWidth = 720,
   minWidth = 360,
   maxWidth = 960,
-  collapsedWidth = 56,
+  collapsedWidth = 72,
   storageKey,
   ...props
 }: ResizableSheetContentProps) {
@@ -100,7 +100,7 @@ export function ResizableSheetContent({
       {...props}
     >
       {minimized ? (
-        <div className="flex h-full flex-col items-center gap-3 px-2 py-3">
+        <div className="flex h-full flex-col items-center gap-3 border-l bg-muted/40 px-2 py-3">
           <Button
             type="button"
             variant="ghost"
@@ -118,19 +118,29 @@ export function ResizableSheetContent({
           <div className="mt-2 max-h-[calc(100vh-8rem)] text-muted-foreground [writing-mode:vertical-rl]">
             <span className="line-clamp-1 text-xs">{title}</span>
           </div>
+          <div className="mt-auto flex flex-col items-center gap-1 text-[11px] text-muted-foreground">
+            <GripVertical className="size-4" />
+            <span className="[writing-mode:vertical-rl]">已最小化</span>
+          </div>
         </div>
       ) : (
         <>
           <button
             type="button"
             aria-label="拖动调整面板宽度"
-            className="absolute inset-y-0 left-0 z-20 flex w-3 cursor-ew-resize items-center justify-center border-l border-transparent hover:bg-primary/5 focus-visible:bg-primary/5 focus-visible:outline-none"
+            title="按住拖动调整面板宽度"
+            className="absolute inset-y-0 left-0 z-20 flex w-7 cursor-ew-resize items-center justify-center border-r bg-muted/60 text-muted-foreground shadow-sm hover:bg-primary/10 hover:text-primary focus-visible:bg-primary/10 focus-visible:text-primary focus-visible:outline-none"
             onPointerDown={(event) => {
               event.preventDefault()
               setDragging(true)
             }}
           >
-            <GripVertical className="size-4 text-muted-foreground/70" />
+            <div className="flex flex-col items-center gap-1">
+              <GripVertical className="size-4" />
+              <span className="text-[10px] leading-none [writing-mode:vertical-rl]">
+                拖动
+              </span>
+            </div>
           </button>
           <div className="absolute right-3 top-3 z-30 flex items-center gap-1">
             <Button
@@ -148,7 +158,7 @@ export function ResizableSheetContent({
               </Button>
             </SheetClose>
           </div>
-          <div className="flex h-full min-w-0 flex-col pl-3">{children}</div>
+          <div className="flex h-full min-w-0 flex-col pl-7">{children}</div>
         </>
       )}
     </SheetContent>

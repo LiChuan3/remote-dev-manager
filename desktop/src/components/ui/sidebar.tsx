@@ -178,27 +178,43 @@ function Sidebar({
 
   if (isMobile) {
     return (
-      <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
-        <SheetContent
-          dir={dir}
-          data-sidebar="sidebar"
-          data-slot="sidebar"
-          data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
-          style={
-            {
-              "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
-            } as React.CSSProperties
-          }
-          side={side}
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>侧边栏</SheetTitle>
-            <SheetDescription>显示移动端侧边栏。</SheetDescription>
-          </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
-        </SheetContent>
-      </Sheet>
+      <>
+        {!openMobile ? (
+          <button
+            type="button"
+            data-sidebar="mobile-rail"
+            aria-label="打开侧边栏"
+            title="打开侧边栏"
+            onClick={() => setOpenMobile(true)}
+            className="fixed left-0 top-20 z-40 flex h-24 w-6 items-center justify-center rounded-r-lg border-y border-r bg-sidebar/95 text-sidebar-foreground shadow-sm hover:bg-sidebar-accent"
+          >
+            <span className="text-[11px] font-medium [writing-mode:vertical-rl]">
+              菜单
+            </span>
+          </button>
+        ) : null}
+        <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
+          <SheetContent
+            dir={dir}
+            data-sidebar="sidebar"
+            data-slot="sidebar"
+            data-mobile="true"
+            className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+            style={
+              {
+                "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+              } as React.CSSProperties
+            }
+            side={side}
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>侧边栏</SheetTitle>
+              <SheetDescription>显示移动端侧边栏。</SheetDescription>
+            </SheetHeader>
+            <div className="flex h-full w-full flex-col">{children}</div>
+          </SheetContent>
+        </Sheet>
+      </>
     )
   }
 
@@ -244,6 +260,7 @@ function Sidebar({
           {children}
         </div>
       </div>
+      <SidebarRail />
     </div>
   )
 }
@@ -284,12 +301,12 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       aria-label="切换侧边栏"
       tabIndex={-1}
       onClick={toggleSidebar}
-      title="切换侧边栏"
+      title="点击折叠/展开侧边栏"
       className={cn(
-        "absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
+        "absolute inset-y-3 z-20 hidden w-5 items-center justify-center rounded-full border border-sidebar-border bg-sidebar/95 shadow-sm transition-all ease-linear group-data-[side=left]:-right-2.5 group-data-[side=right]:-left-2.5 after:absolute after:inset-y-2 after:start-1/2 after:w-[3px] after:-translate-x-1/2 after:rounded-full after:bg-sidebar-border hover:border-primary/40 hover:bg-sidebar-accent hover:after:bg-primary sm:flex",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
         "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
-        "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar",
+        "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar-accent",
         "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
         "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
         className
