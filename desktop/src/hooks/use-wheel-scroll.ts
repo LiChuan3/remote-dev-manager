@@ -29,6 +29,21 @@ function scrollElement(el: HTMLElement, deltaY: number): boolean {
   return el.scrollTop !== before
 }
 
+function canScrollDocument(deltaY: number): boolean {
+  const doc = document.documentElement
+  if (doc.scrollHeight <= window.innerHeight + 1) return false
+  if (deltaY > 0) {
+    return window.scrollY + window.innerHeight < doc.scrollHeight - 1
+  }
+  return window.scrollY > 0
+}
+
+function scrollDocument(deltaY: number): boolean {
+  const before = window.scrollY
+  window.scrollBy({ top: deltaY, left: 0, behavior: "auto" })
+  return window.scrollY !== before
+}
+
 function eventPath(event: WheelEvent): EventTarget[] {
   if (typeof event.composedPath === "function") return event.composedPath()
   const path: EventTarget[] = []
@@ -59,6 +74,11 @@ export function useWheelScroll() {
 
       const main = document.querySelector<HTMLElement>("[data-ui-scroll-container]")
       if (main && canScrollY(main, event.deltaY) && scrollElement(main, event.deltaY)) {
+        event.preventDefault()
+        return
+      }
+
+      if (canScrollDocument(event.deltaY) && scrollDocument(event.deltaY)) {
         event.preventDefault()
       }
     }

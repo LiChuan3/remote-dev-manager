@@ -20,7 +20,7 @@ export function AppShell() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <SiteHeader />
-        <main data-ui-scroll-container className="flex-1 overflow-y-auto">
+        <main data-ui-scroll-container className="flex-1">
           <div className="mx-auto w-full max-w-6xl p-4 md:p-6 space-y-6">
             <Outlet />
           </div>

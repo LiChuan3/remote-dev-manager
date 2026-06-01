@@ -144,8 +144,9 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    /* Disable page-level overscroll / rubber-band so it feels desktop-native. */
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: none;
     /* Selection behavior: desktop UIs feel cleaner without accidental
        selection; editable + code surfaces stay selectable below. */
     user-select: none;
@@ -169,12 +170,11 @@
     -webkit-user-select: text;
   }
 
-  /* The single desktop scroll shell — used by the app's <main>. */
+  /* Page scrolling is document-native so mouse wheels work reliably in WebView. */
   [data-ui-scroll-container] {
-    height: 100vh;
-    height: 100dvh;
-    overflow-x: hidden;
-    overflow-y: auto;
+    min-height: calc(100vh - var(--header-height, 3rem));
+    min-height: calc(100dvh - var(--header-height, 3rem));
+    overflow: visible;
     overscroll-behavior-y: none;
   }
 }
